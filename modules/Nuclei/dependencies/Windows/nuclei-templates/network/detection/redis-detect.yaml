@@ -1,0 +1,33 @@
+id: redis-detect
+
+info:
+  name: Redis Service - Detect
+  author: pussycat0x
+  severity: info
+  description: Redis service was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: product:"redis"
+  tags: network,redis,detect
+tcp:
+  - inputs:
+      - data: "*1\r\n$4\r\ninfo\r\n"
+
+    host:
+      - "{{Hostname}}"
+      - "tls://{{Hostname}}"
+    port: 6379,6380
+    read-size: 1024
+
+    matchers:
+      - type: word
+        words:
+          - "DENIED Redis"
+          - "CONFIG REWRITE"
+          - "NOAUTH Authentication"
+        condition: or
+# digest: 4b0a00483046022100e1966966a32585cf74c9608e8fc349714dbe6b5bb9c77b9b4d982fbd8d9cdc4b0221008cf4ea4f86e7994513591b90d02fa4c07dd79fb5f4f306c506323cb2a1c063ed:922c64590222798bb761d5b6d8e72950

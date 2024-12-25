@@ -1,0 +1,12 @@
+Run Artifact
+"C:\Miniconda\envs\mssp_env\python.exe" "C:\Users\Nof\Desktop\risx-mssp-python-script\main.py" "C:\Users\Nof\Desktop\risx-mssp-python-script\jsonexamples\request_velociraptor_01-04-2024-11-19-00[PersistenceSniper].json"
+
+Get Clients:
+"C:\Miniconda\envs\mssp_env\python.exe" "C:\Users\Nof\Desktop\risx-mssp-python-script\main.py" "C:\Users\Nof\Desktop\risx-mssp-python-script\jsonexamples\request_velociraptor_01-04-2024-11-19-00[GetClients].json"
+
+
+# Activate the Python 3.10 virtual environment
+source ~/myenv/bin/activate
+
+# (Optional) Verify the Python version in the virtual environment
+python --version

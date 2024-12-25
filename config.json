@@ -1,0 +1,141 @@
+{
+    "General": {
+        "DefaultInter": ""
+    },
+    "Modules": {
+        "Nuclei": {
+            "id": "test",
+            "Enable": true,
+            "Arguments": {
+                "NucleiTags": "",
+                "NucleiWorkflow": "",
+                "NucleiExcludeSeverity": ""
+            },
+            "ModuleName": "Nuclei",
+            "LastRunDate": ""
+        },
+		"TimeSketch": {
+            "id": "",
+            "Enable": true,
+            "Arguments": {
+            },
+            "ModuleName": "TimeSketch",
+            "LastRunDate": ""
+        },
+        "Velociraptor": {
+            "id": "",
+            "Enable": true,
+            "ModuleName": "Velociraptor",
+            "SubModules": {
+                "Hayabusa": {
+                    "id": "",
+                    "Enable": true,
+                    "Arguments": {
+                        "UTC": "Y",
+                        "Threads": "2",
+                        "EIDFilter": "N",
+                        "NoisyRules": "N",
+                        "UpdateRules": "Y",
+                        "MinimalLevel": "informational",
+                        "OutputProfile": "standard"
+                    },
+                    "ArtifactTimeOutInMinutes": "2000",
+                    "ModuleName": "Hayabusa",
+                    "LastRunDate": "",
+                    "TimeInterval": "15"
+                },
+                "Zircolite": {
+                    "id": "",
+                    "Enable": true,
+                    "Arguments": {
+                        "Rules": "https:\\raw.githubusercontent.com\\wagga40\\Zircolite\\master\\rules\\rules_windows_generic.json",
+                        "EVTXPath": "C:\\Windows\\System32\\winevt\\Logs",
+                        "Mappings": "https:\\raw.githubusercontent.com\\wagga40\\Zircolite\\master\\config\\fieldMappings.json"
+                    },
+                    "ArtifactTimeOutInMinutes": "2000",
+                    "ModuleName": "Zircolite",
+                    "LastRunDate": "",
+                    "TimeInterval": "15"
+                },
+                "HardeningKitty": {
+                    "id": "",
+                    "Enable": true,
+                    "Arguments": {
+                        "Baseline": "finding_list_0x6d69636b_machine",
+                        "TakeBackUp": "N"
+                    },
+                    "ArtifactTimeOutInMinutes": "2000",
+                    "ModuleName": "HardeningKitty",
+                    "LastRunDate": "",
+                    "TimeInterval": "15"
+                },
+                "PersistenceSniper": {
+                    "id": "",
+                    "Enable": true,
+                    "Arguments": {},
+                    "ArtifactTimeOutInMinutes": "2000",
+                    "ModuleName": "PersistenceSniper",
+                    "LastRunDate": "",
+                    "TimeInterval": "15"
+                }
+            },
+            "LastRunDate": ""
+        }
+    },
+    "ClientData": {
+        "API": {
+            "OpenAI": "APIKey",
+            "Shodan": "APIKey",
+            "Dehashed": "APIKey"
+        }
+    },
+    "RequestStatus": [
+    ],
+    "ClientInfrastructure": {
+        "Assets": {
+            "r4f18d96b1f": {
+                "AssetType": [
+                    "IP"
+                ],
+                "AssetEnable": true,
+                "AssetString": "18.168.185.151",
+                "AssetModules": [
+                    "Velociraptor",
+                    "Nuclei"
+                ]
+            },
+            "r7163318a77": {
+                "AssetType": [
+                    "URL"
+                ],
+                "AssetEnable": true,
+                "AssetString": "google.co.il",
+                "AssetModules": [
+                    "Shodan",
+                    "Dehashed"
+                ]
+            },
+            "r7b79d5b7ca": {
+                "AssetType": [
+                    "User Name"
+                ],
+                "AssetEnable": true,
+                "AssetString": "name1",
+                "AssetModules": [
+                    "Velociraptor",
+                    "Risx"
+                ]
+            }
+        },
+        "Population": [
+            {
+                "Label": "",
+                "ComputerName": "SRV1"
+            },
+            {
+                "Label": "",
+                "ComputerName": "SRV2"
+            }
+        ]
+    }
+}
