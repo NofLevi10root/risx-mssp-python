@@ -1,0 +1,28 @@
+PyVelo:
+Get Clients:
+Return value: Clients
+Command: python VelociraptorAPI.py clientsinformation --organizationid "OCHL0"
+
+Run hunt:
+Return value: hunt_id
+Command: python VelociraptorAPI.py runartifact --artifactname "Windows.Search.FileFinder" --arguments "Calculate_Hash= 'Y', VSS_MAX_AGE_DAYS= '150'" --expiretime "30" --organizationid "OCHL0" --label "IRIS"
+
+Collect hunt data:
+Return value: list of rows
+Command: python VelociraptorAPI.py collectdata --huntid "H.CNT9MRCCTR9IO6" --organizationid "OCHL0"
+
+Create Velociraptor user:
+Return value: true or false
+Command: python VelociraptorAPI.py adduser --organizationid "OCHL0" --username "testical" --password "123qwe!@#" --roles "reader"
+
+
+Server Hunt [Not working]:
+Return value: hunt_id
+python VelociraptorAPI.py runartifact --artifactname "Server.Import.ArtifactExchange" --arguments "" --expiretime "30" --organizationid "OCHL0" --label ""
+
+Add User [Not working]:
+return value:
+python VelociraptorAPI.py runartifact --artifactname "Server.Utils.AddUser" --arguments "UserName= 'test', ResetPassword= 'Y', Role='reader'", --expiretime "30" --organizationid "OCHL0" --label "IRIS"
+
+Add labels to users:
+return value:
