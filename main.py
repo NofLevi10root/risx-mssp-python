@@ -74,7 +74,7 @@ def main():
 
 
     logger.info("Dump test.json for testing!")
-    # json.dump(config_data, open('test.json', 'w'))
+    # json.dump(config_data, open('test.json', 'w')) ## do not unc
     logger.info("Updating json!")
 
     #additionals.logger.cleanup_logging(logger)

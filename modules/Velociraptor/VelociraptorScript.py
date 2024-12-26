@@ -11,6 +11,14 @@ import additionals.funcs
 import traceback
 import random
 
+import ssl
+import urllib3
+# Disable SSL warnings globally
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Modify SSL context globally to allow unverified HTTPS connections
+ssl._create_default_https_context = ssl._create_unverified_context
+
 
 def run_generic_vql(query, logger):
     try:

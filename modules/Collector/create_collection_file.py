@@ -1,5 +1,4 @@
-import ssl
-import urllib3
+
 import logging
 import os
 import json
@@ -27,12 +26,14 @@ if parent_dir not in sys.path:
 import additionals.mysql_functions
 import additionals.funcs
 import modules.Velociraptor.VelociraptorScript
-
+import ssl
+import urllib3
 # Disable SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Modify SSL context globally to allow unverified HTTPS connections
 ssl._create_default_https_context = ssl._create_unverified_context
+
 
 
 def connect_my_sql(env_dict, logger):
@@ -237,16 +238,18 @@ def run_server_artifact(logger, config_data):
 
         if os.path.exists(ttttttt):
             # dont forget to change owner
-            command = ["sudo", "chown", "Bacteria5570", ttttttt]
+            user_name = subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()
+            command = ["sudo", "chown", user_name, ttttttt]
+            logger.info(f"sudo command command {command}")
             try:
                 subprocess.run(command, check=True)
-                logger.info("Ownership changed successfully.")
+                logger.info(f"Ownership changed successfully. {ttttttt}")
             except subprocess.CalledProcessError:
                 logger.info(
-                    "Failed to change owner. The command did not run successfully."
+                    f"Failed to change owner. The command did not run successfully. {ttttttt}"
                 )
             except Exception as e:
-                logger.info(f"An error occurred: {e}")
+                logger.info(f"An error occurred in change ownership of this file {ttttttt} error is: {e}")
         else:
             logger.error(f"The file or directory {ttttttt} does not exist.")
 
