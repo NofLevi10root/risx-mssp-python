@@ -162,9 +162,11 @@ cython_debug/
 #.idea/
 
 #ignore api directory
-modules/dependencies/
+modules/dependencies/*
 logs/*
 response_folder/*
 Collector/*
 *.zip
 test.json
+modules/velociraptor/dependencies/api.config.yaml
+api.config.yaml

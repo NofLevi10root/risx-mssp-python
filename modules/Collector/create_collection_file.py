@@ -1,4 +1,3 @@
-
 import logging
 import os
 import json
@@ -28,12 +27,12 @@ import additionals.funcs
 import modules.Velociraptor.VelociraptorScript
 import ssl
 import urllib3
+
 # Disable SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Modify SSL context globally to allow unverified HTTPS connections
 ssl._create_default_https_context = ssl._create_unverified_context
-
 
 
 def connect_my_sql(env_dict, logger):
@@ -46,7 +45,14 @@ def connect_my_sql(env_dict, logger):
             logger,
         )[0][0]
     )
-    return config_data
+    config = json.loads(
+        additionals.mysql_functions.execute_query(
+            connection,
+            f"SELECT JSON_EXTRACT(config,'$.General.AgentLinks') FROM configjson",
+            logger,
+        )[0][0]
+    )
+    return [config_data, config]
 
 
 def create_zip(files_to_zip, zip_file_path, logger):
@@ -81,8 +87,13 @@ def create_zip(files_to_zip, zip_file_path, logger):
         )  # Changed to logger.error for better error visibility
 
 
-def run_server_artifact(logger, config_data):
-    logger.info("Running server artifact query. " + str(config_data))
+def run_server_artifact(logger, config_data, config_agent):
+    logger.info(
+        "Running server artifact query. "
+        + str(config_data)
+        + " Agent LiNKS: "
+        + str(config_agent)
+    )
     try:
         artifacts_dict = {"Server.Utils.CreateCollector": {"opt_format": "csv"}}
         artifactsListArr = ["Generic.Client.Info"]
@@ -119,16 +130,19 @@ def run_server_artifact(logger, config_data):
         OsCollectorPath = ""
         BatchFile = ""
         shell_script_content = ""
+        logger.info(f"Log FlowId : {FlowId}")
         collectorPath = f'~/setup_platform/workdir/velociraptor/velociraptor/clients/server/collections/{FlowId}/uploads/scope/{config_data["Configuration"]["CollectorFileName"]}'
         collectorPath = os.path.abspath(os.path.expanduser(collectorPath))
-        TestPathVelo = "~/mssp/risx-mssp-python-script/Collector"
-        TestPathVelo = os.path.abspath(os.path.expanduser(TestPathVelo))
+        TestPathVelo = "Collector/"
+        SplitScript = ""
+        # TestPathVelo = os.path.abspath(os.path.expanduser(TestPathVelo))
 
         match sys.argv[2]:
 
             case "Windows":
                 OsCollector = "velociraptor_client.exe"
-                OsCollectorPath = "~/setup_platform/workdir/velociraptor/velociraptor/clients/windows/velociraptor_client.exe"
+                SplitScript = "modules/Collector/PowerShellSplit.ps1"
+
                 BatchFile = (
                     f'Collector/{config_data["Configuration"]["CollectorFileName"]}.bat'
                 )
@@ -162,7 +176,8 @@ def run_server_artifact(logger, config_data):
                 """
             case "Mac":
                 OsCollector = "velociraptor_client"
-                OsCollectorPath = "~/setup_platform/workdir/velociraptor/velociraptor/clients/mac/velociraptor_client"
+                SplitScript = "modules/Collector/split_and_hash.sh"
+
                 BatchFile = (
                     f'Collector/{config_data["Configuration"]["CollectorFileName"]}.sh'
                 )
@@ -186,7 +201,8 @@ def run_server_artifact(logger, config_data):
                 """
             case "Linux":
                 OsCollector = "velociraptor_client"
-                OsCollectorPath = "~/setup_platform/workdir/velociraptor/velociraptor/clients/linux/velociraptor_client"
+                SplitScript = "modules/Collector/split_and_hash.sh"
+
                 BatchFile = (
                     f'Collector/{config_data["Configuration"]["CollectorFileName"]}.sh'
                 )
@@ -209,37 +225,48 @@ def run_server_artifact(logger, config_data):
                 ./split_and_hash.sh "$latestFile" 250M
                 """
 
-        OsCollectorPath = os.path.abspath(os.path.expanduser(OsCollectorPath))
+        logger.info("step 1 complete")
+        OsCollectorPath = config_agent[sys.argv[2]]
+        # OsCollectorPath = os.path.abspath(os.path.expanduser(OsCollectorPath))
+        logger.info(f"OsCollectorPath : {OsCollectorPath}")
 
-    
         # Write the content to the shell script file
         with open(BatchFile, "w") as file:
             file.write(shell_script_content)
         time.sleep(1)
+        logger.info("22222222222222222222")
         command = [
-            "sudo",
-            "-u",
-            "root",
+            # "sudo",
+            # "-u",
+            # "root",
             "mv",
             collectorPath,
             TestPathVelo,
         ]
         ttttttt = f'{TestPathVelo}/{config_data["Configuration"]["CollectorFileName"]}'
+        logger.info("3333333333333")
 
         try:
+            logger.info(f"Start File MV Command is {command}")
             subprocess.run(command, check=True)
             logger.info("File moved successfully.")
         except subprocess.CalledProcessError as f:
             logger.error(f"Failed to move the file. {f}")
         except Exception as e:
             logger.error(f"Error in This Move stuff {e}")
+        logger.info("4444444444444444444")
 
         time.sleep(1)
+        logger.info("5555555555555555555555")
 
         if os.path.exists(ttttttt):
             # dont forget to change owner
-            user_name = subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()
-            command = ["sudo", "chown", user_name, ttttttt]
+            user_name = subprocess.run(
+                ["whoami"], stdout=subprocess.PIPE, text=True
+            ).stdout.strip()
+            command = [
+                # "sudo",
+                  "chown", user_name, ttttttt]
             logger.info(f"sudo command command {command}")
             try:
                 subprocess.run(command, check=True)
@@ -249,16 +276,19 @@ def run_server_artifact(logger, config_data):
                     f"Failed to change owner. The command did not run successfully. {ttttttt}"
                 )
             except Exception as e:
-                logger.info(f"An error occurred in change ownership of this file {ttttttt} error is: {e}")
+                logger.info(
+                    f"An error occurred in change ownership of this file {ttttttt} error is: {e}"
+                )
         else:
             logger.error(f"The file or directory {ttttttt} does not exist.")
+        logger.info("66666666666666")
 
         # Make the shell script executable
         os.chmod(BatchFile, 0o755)
         NewVeloCollector = (
             f'Collector/{config_data["Configuration"]["CollectorFileName"]}'
         )
-        files_to_zip = [BatchFile, OsCollectorPath, NewVeloCollector,"Collector/PowerShellSplit.ps1"]
+        files_to_zip = [BatchFile, OsCollectorPath, NewVeloCollector, SplitScript]
         zip_file_path = (
             f'Collector/{config_data["Configuration"]["CollectorFileName"]}.zip'
         )
@@ -278,4 +308,4 @@ if __name__ == "__main__":
     config_data = connect_my_sql(env_dict, logger)
 
     # Run the server artifact
-    run_server_artifact(logger, config_data)
+    run_server_artifact(logger, config_data[0], config_data[1])
