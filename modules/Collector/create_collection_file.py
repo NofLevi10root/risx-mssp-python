@@ -12,6 +12,8 @@ import yaml
 import zipfile
 import subprocess
 import time
+import random
+import string
 
 # Set the script directory and parent directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -126,14 +128,37 @@ def run_server_artifact(logger, config_data, config_agent):
             "Server.Utils.CreateCollector", logger, artifacts_dict
         )
 
+        random_string = "".join(random.choices(string.ascii_letters, k=7))
+        os.makedirs(f"Collector/{random_string}", exist_ok=True)
         OsCollector = ""
         OsCollectorPath = ""
         BatchFile = ""
         shell_script_content = ""
         logger.info(f"Log FlowId : {FlowId}")
-        collectorPath = f'~/setup_platform/workdir/velociraptor/velociraptor/clients/server/collections/{FlowId}/uploads/scope/{config_data["Configuration"]["CollectorFileName"]}'
-        collectorPath = os.path.abspath(os.path.expanduser(collectorPath))
-        TestPathVelo = "Collector/"
+        collectorPath = f'clients/server/collections/{FlowId}/uploads/scope/{config_data["Configuration"]["CollectorFileName"]}'
+        channel = modules.Velociraptor.VelociraptorScript.setup_connection(logger)
+        stub = api_pb2_grpc.APIStub(channel)
+        offset = 0
+        NewVeloCollector = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}'  # Open the output file in binary write mode
+        with open(NewVeloCollector, "wb") as output_file:
+            while True:
+                # Prepare the request
+                request = api_pb2.VFSFileBuffer(
+                    components=collectorPath.split("/"),
+                    length=1024,  # Adjust buffer size as needed
+                    offset=offset,
+                )
+
+                # Send the request and receive the response
+                res = stub.VFSGetBuffer(request)
+                if len(res.data) == 0:
+                    break
+
+                # Write data to the file
+                output_file.write(res.data)
+                offset += len(res.data)
+
+        # TestPathVelo = "Collector/"
         SplitScript = ""
         # TestPathVelo = os.path.abspath(os.path.expanduser(TestPathVelo))
 
@@ -142,12 +167,10 @@ def run_server_artifact(logger, config_data, config_agent):
             case "Windows":
                 OsCollector = "velociraptor_client.exe"
                 SplitScript = "modules/Collector/PowerShellSplit.ps1"
+                OsCollectorPath = "velociraptor_client.exe"
 
-                BatchFile = (
-                    f'Collector/{config_data["Configuration"]["CollectorFileName"]}.bat'
-                )
+                BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.bat'
                 shell_script_content = f"""
-                
                 @echo off
 
                 :: Define the folder where the files are generated
@@ -177,10 +200,9 @@ def run_server_artifact(logger, config_data, config_agent):
             case "Mac":
                 OsCollector = "velociraptor_client"
                 SplitScript = "modules/Collector/split_and_hash.sh"
+                OsCollectorPath = "velociraptor_client"
 
-                BatchFile = (
-                    f'Collector/{config_data["Configuration"]["CollectorFileName"]}.sh'
-                )
+                BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.sh'
                 shell_script_content = f"""#!/bin/sh
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
@@ -202,10 +224,9 @@ def run_server_artifact(logger, config_data, config_agent):
             case "Linux":
                 OsCollector = "velociraptor_client"
                 SplitScript = "modules/Collector/split_and_hash.sh"
+                OsCollectorPath = "velociraptor_client"
 
-                BatchFile = (
-                    f'Collector/{config_data["Configuration"]["CollectorFileName"]}.sh'
-                )
+                BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.sh'
                 shell_script_content = f"""#!/bin/sh
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
@@ -226,8 +247,10 @@ def run_server_artifact(logger, config_data, config_agent):
                 """
 
         logger.info("step 1 complete")
-        OsCollectorPath = config_agent[sys.argv[2]]
-        # OsCollectorPath = os.path.abspath(os.path.expanduser(OsCollectorPath))
+        OsCollectorPath = os.path.join(
+            os.path.dirname(config_agent[sys.argv[2]]), OsCollectorPath
+        )
+        OsCollectorPath = os.path.abspath(os.path.expanduser(OsCollectorPath))
         logger.info(f"OsCollectorPath : {OsCollectorPath}")
 
         # Write the content to the shell script file
@@ -235,63 +258,61 @@ def run_server_artifact(logger, config_data, config_agent):
             file.write(shell_script_content)
         time.sleep(1)
         logger.info("22222222222222222222")
-        command = [
-            # "sudo",
-            # "-u",
-            # "root",
-            "mv",
-            collectorPath,
-            TestPathVelo,
-        ]
-        ttttttt = f'{TestPathVelo}/{config_data["Configuration"]["CollectorFileName"]}'
+        # command = [
+        #     "sudo",
+        #     "-u",
+        #     "root",
+        #     "mv",
+        #     collectorPath,
+        #     TestPathVelo,
+        # ]
+        # ttttttt = f'{TestPathVelo}/{config_data["Configuration"]["CollectorFileName"]}'
         logger.info("3333333333333")
 
-        try:
-            logger.info(f"Start File MV Command is {command}")
-            subprocess.run(command, check=True)
-            logger.info("File moved successfully.")
-        except subprocess.CalledProcessError as f:
-            logger.error(f"Failed to move the file. {f}")
-        except Exception as e:
-            logger.error(f"Error in This Move stuff {e}")
+        # https://mssp-dev.northeurope.cloudapp.azure.com/kibana/app/dashboards#/view/b118d331-2334-4da1-85d0-626610073555?embed=true&_g=(time:(from:'now-1124h',to:'now'))&show-time-filter=true
+
+        # try:
+        #     logger.info(f"Start File MV Command is {command}")
+        #     subprocess.run(command, check=True)
+        #     logger.info("File moved successfully.")
+        # except subprocess.CalledProcessError as f:
+        #     logger.error(f"Failed to move the file. {f}")
+        # except Exception as e:
+        #     logger.error(f"Error in This Move stuff {e}")
         logger.info("4444444444444444444")
 
         time.sleep(1)
         logger.info("5555555555555555555555")
 
-        if os.path.exists(ttttttt):
-            # dont forget to change owner
-            user_name = subprocess.run(
-                ["whoami"], stdout=subprocess.PIPE, text=True
-            ).stdout.strip()
-            command = [
-                # "sudo",
-                  "chown", user_name, ttttttt]
-            logger.info(f"sudo command command {command}")
-            try:
-                subprocess.run(command, check=True)
-                logger.info(f"Ownership changed successfully. {ttttttt}")
-            except subprocess.CalledProcessError:
-                logger.info(
-                    f"Failed to change owner. The command did not run successfully. {ttttttt}"
-                )
-            except Exception as e:
-                logger.info(
-                    f"An error occurred in change ownership of this file {ttttttt} error is: {e}"
-                )
-        else:
-            logger.error(f"The file or directory {ttttttt} does not exist.")
+        # if os.path.exists(ttttttt):
+        #     # dont forget to change owner
+        #     user_name = subprocess.run(
+        #         ["whoami"], stdout=subprocess.PIPE, text=True
+        #     ).stdout.strip()
+        #     command = [
+        #         "sudo",
+        #           "chown", user_name, ttttttt]
+        #     logger.info(f"sudo command command {command}")
+        #     try:
+        #         subprocess.run(command, check=True)
+        #         logger.info(f"Ownership changed successfully. {ttttttt}")
+        #     except subprocess.CalledProcessError:
+        #         logger.info(
+        #             f"Failed to change owner. The command did not run successfully. {ttttttt}"
+        #         )
+        #     except Exception as e:
+        #         logger.info(
+        #             f"An error occurred in change ownership of this file {ttttttt} error is: {e}"
+        #         )
+        # else:
+        #     logger.error(f"The file or directory {ttttttt} does not exist.")
         logger.info("66666666666666")
 
         # Make the shell script executable
         os.chmod(BatchFile, 0o755)
-        NewVeloCollector = (
-            f'Collector/{config_data["Configuration"]["CollectorFileName"]}'
-        )
+
         files_to_zip = [BatchFile, OsCollectorPath, NewVeloCollector, SplitScript]
-        zip_file_path = (
-            f'Collector/{config_data["Configuration"]["CollectorFileName"]}.zip'
-        )
+        zip_file_path = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.zip'
         # os.chmod(NewVeloCollector, 0o755)
         create_zip(files_to_zip, zip_file_path, logger)
         logger.info("cut " + zip_file_path)
