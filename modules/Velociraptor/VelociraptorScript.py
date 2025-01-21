@@ -350,7 +350,7 @@ def run_artifact(row, logger):
                 spec = f"dict(`{module}`=dict())"
                 print("BestPractice module:" + module)
                 #query = f"LET collection = hunt(description='API Hunt:{module}',artifacts='{module}', spec={spec}, expires=now() + {expire_time}) SELECT HuntId FROM collection"
-                query = f"LET collection = hunt(description='API Hunt:{artifact_name}', artifacts='{module}', spec={spec}, expires=now() + {expire_time}, timeout={max_execution_time}, max_rows={max_rows}, max_bytes={max_bytes_uploaded}, cpu_limit={cpu_limit}) SELECT HuntId FROM collection"
+                query = f"LET collection = hunt(description='API Hunt:{module}', artifacts='{module}', spec={spec}, expires=now() + {expire_time}, timeout={max_execution_time}, max_rows={max_rows}, max_bytes={max_bytes_uploaded}, cpu_limit={cpu_limit}) SELECT HuntId FROM collection"
                 channel = setup_connection(logger)
                 stub = api_pb2_grpc.APIStub(channel)
                 new_row["SubModuleName"] = module
