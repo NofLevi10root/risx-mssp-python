@@ -59,10 +59,11 @@ def connect_my_sql(env_dict, logger):
 
 def create_zip(files_to_zip, zip_file_path, logger):
     """
-    Creates a zip file containing the specified files, placing all files in the root of the zip.
+    Creates a zip file containing the specified files or directories, placing all files in the root of the zip.
+    If a directory is specified, all files within it (including in subdirectories) will be added.
 
     Args:
-        files_to_zip (list): List of file paths to include in the zip file.
+        files_to_zip (list): List of file paths or directories to include in the zip file.
         zip_file_path (str): The destination path for the zip file.
         logger (logging.Logger): Logger instance to log progress and errors.
 
@@ -70,23 +71,29 @@ def create_zip(files_to_zip, zip_file_path, logger):
         None
     """
     try:
-        with zipfile.ZipFile(zip_file_path, "w") as zipf:
-            for file_path in files_to_zip:
-                logger.info(
-                    f"Check file to zip: {file_path} " + str(os.path.exists(file_path))
-                )
-                if os.path.exists(file_path):
-                    logger.info(f"Start file to zip: {file_path}")
-                    # Extract the filename from the path and use it as the archive name
-                    archive_name = os.path.basename(file_path)
-                    zipf.write(file_path, archive_name)
+        with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for item in files_to_zip:
+                if os.path.isdir(item):
+                    logger.info(f"Adding directory to zip: {item}")
+                    for foldername, subfolders, filenames in os.walk(item):
+                        for filename in filenames:
+                            # Create complete path to file in folder
+                            file_path = os.path.join(foldername, filename)
+                            # Archive name keeps the folder structure relative to the folder being zipped
+                            archive_name = os.path.relpath(
+                                file_path, os.path.dirname(item)
+                            )
+                            zipf.write(file_path, archive_name)
+                            logger.info(f"Added file to zip: {archive_name}")
+                elif os.path.isfile(item):
+                    logger.info(f"Adding file to zip: {item}")
+                    archive_name = os.path.basename(item)
+                    zipf.write(item, archive_name)
                     logger.info(f"Added file to zip: {archive_name}")
                 else:
-                    logger.info(f" file Not Exist: {file_path}")
+                    logger.info(f"Item does not exist, skipping: {item}")
     except Exception as e:
-        logger.error(
-            f"Error while creating zip file: {str(e)}"
-        )  # Changed to logger.error for better error visibility
+        logger.error(f"Error while creating zip file: {str(e)}")
 
 
 def run_server_artifact(logger, config_data, config_agent):
@@ -128,7 +135,7 @@ def run_server_artifact(logger, config_data, config_agent):
             "Server.Utils.CreateCollector", logger, artifacts_dict
         )
 
-        random_string = "".join(random.choices(string.ascii_letters, k=7))
+        random_string = "".join(random.choices(string.ascii_letters, k=11))
         os.makedirs(f"Collector/{random_string}", exist_ok=True)
         OsCollector = ""
         OsCollectorPath = ""
@@ -166,10 +173,38 @@ def run_server_artifact(logger, config_data, config_agent):
 
             case "Windows":
                 OsCollector = "velociraptor_client.exe"
-                SplitScript = "modules/Collector/PowerShellSplit.ps1"
+                # SplitScript = "modules/Collector/PowerShellSplit.ps1"
+                SplitScript = "modules/Collector/7-ZipPortable"
                 OsCollectorPath = "velociraptor_client.exe"
 
                 BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.bat'
+                # shell_script_content = f"""
+                # @echo off
+
+                # :: Define the folder where the files are generated
+                # set "folderPath=%cd%"
+
+                # :: Run Velociraptor command to generate the files
+                # {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
+                # :: Find the most recent file matching the pattern
+                # for /f "delims=" %%F in ('dir /b /od "%folderPath%\{config_data["Configuration"]["CollectorFileName"]}-r___r-*"') do set "latestFile=%%F"
+
+                # :: Validate that a file was found
+                # if not defined latestFile (
+                #     echo No file matching the pattern "{config_data["Configuration"]["CollectorFileName"]}-r___r-*" was found.
+                #     exit /b 1
+                # )
+
+                # :: Log the file being processed
+                # echo Most recent file: %latestFile%
+
+                # :: Run the PowerShell script on the most recent file
+                # powershell -NoProfile -Command "&  ".\PowerShellSplit.ps1 -filePath '%folderPath%\%latestFile%' -outputFolder '%folderPath%' -chunkSizeMB 250" "
+
+                # :: Exit the batch script
+                # exit /b
+
+                # """
                 shell_script_content = f"""
                 @echo off
 
@@ -177,26 +212,30 @@ def run_server_artifact(logger, config_data, config_agent):
                 set "folderPath=%cd%"
 
                 :: Run Velociraptor command to generate the files
-                {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
-                :: Find the most recent file matching the pattern
-                for /f "delims=" %%F in ('dir /b /od "%folderPath%\{config_data["Configuration"]["CollectorFileName"]}-r___r-*"') do set "latestFile=%%F"
+                {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}        
+                
+                 :: Find the most recent file matching the pattern
+                 for /f "delims=" %%F in ('dir /b /od "%folderPath%\{config_data["Configuration"]["OutputsFileName"]}-r___r-*"') do set "latestFile=%%F"
 
-                :: Validate that a file was found
-                if not defined latestFile (
-                    echo No file matching the pattern "{config_data["Configuration"]["CollectorFileName"]}-r___r-*" was found.
-                    exit /b 1
-                )
+                 :: Validate that a file was found
+                 if not defined latestFile (
+                     echo No file matching the pattern "{config_data["Configuration"]["OutputsFileName"]}-r___r-*" was found.
+                     exit /b 1
+                 )
 
-                :: Log the file being processed
-                echo Most recent file: %latestFile%
+
+                :: Extract filename without extension for the archive name
+                for %%I in ("%latestFile%") do set "latestFileWithoutExtension=%%~nI"
+                
 
                 :: Run the PowerShell script on the most recent file
-                powershell -NoProfile -Command "&  ".\PowerShellSplit.ps1 -filePath '%folderPath%\%latestFile%' -outputFolder '%folderPath%' -chunkSizeMB 250" "
+                "7-ZipPortable/App/7-Zip/7z.exe" a -t7z -v{config_data["Configuration"]["ZipSplitSizeInMb"]}m "Results\%latestFileWithoutExtension%.7z" %latestFile% > txt.txt
 
-                :: Exit the batch script
-                exit /b
+                :: Remove the Original Result file after creating the archive Split for Clarity proposes              
+                del "%folderPath%\%latestFile%"
 
                 """
+
             case "Mac":
                 OsCollector = "velociraptor_client"
                 SplitScript = "modules/Collector/split_and_hash.sh"
@@ -206,20 +245,20 @@ def run_server_artifact(logger, config_data, config_agent):
                 shell_script_content = f"""#!/bin/sh
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
-                # Find the most recent file matching the pattern
-                latestFile=$(ls -t "$folderPath"/{config_data["Configuration"]["CollectorFileName"]}-r___r-* 2>/dev/null | head -n 1)
+                :: Find the most recent file matching the pattern
+                latestFile=$(ls -t "$folderPath"/{config_data["Configuration"]["OutputsFileName"]}-r___r-* 2>/dev/null | head -n 1)
 
                 # Validate that a file was found
                 if [ -z "$latestFile" ]; then
-                    echo "No file matching the pattern '{config_data["Configuration"]["CollectorFileName"]}-r___r-*' was found."
+                    echo "No file matching the pattern '{config_data["Configuration"]["OutputsFileName"]}-r___r-*' was found."
                     exit 1
                 fi
 
-                # Log the file being processed
+                :: Log the file being processed
                 echo "Most recent file: $latestFile"
 
-                # Run another shell script on the most recent file
-                ./split_and_hash.sh "$latestFile" 250M
+                :: Run another shell script on the most recent file
+                ./split_and_hash.sh "$latestFile" {config_data["Configuration"]["ZipSplitSizeInMb"]}M
                 """
             case "Linux":
                 OsCollector = "velociraptor_client"
@@ -230,20 +269,20 @@ def run_server_artifact(logger, config_data, config_agent):
                 shell_script_content = f"""#!/bin/sh
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
-                # Find the most recent file matching the pattern
-                latestFile=$(ls -t "$folderPath"/{config_data["Configuration"]["CollectorFileName"]}-r___r-* 2>/dev/null | head -n 1)
+                :: Find the most recent file matching the pattern
+                latestFile=$(ls -t "$folderPath"/{config_data["Configuration"]["OutputsFileName"]}-r___r-* 2>/dev/null | head -n 1)
 
-                # Validate that a file was found
+                :: Validate that a file was found
                 if [ -z "$latestFile" ]; then
-                    echo "No file matching the pattern '{config_data["Configuration"]["CollectorFileName"]}-r___r-*' was found."
+                    echo "No file matching the pattern '{config_data["Configuration"]["OutputsFileName"]}-r___r-*' was found."
                     exit 1
                 fi
 
-                # Log the file being processed
+                :: Log the file being processed
                 echo "Most recent file: $latestFile"
 
-                # Run another shell script on the most recent file
-                ./split_and_hash.sh "$latestFile" 250M
+                :: Run another shell script on the most recent file
+                ./split_and_hash.sh "$latestFile" {config_data["Configuration"]["ZipSplitSizeInMb"]}M
                 """
 
         logger.info("step 1 complete")
@@ -258,54 +297,9 @@ def run_server_artifact(logger, config_data, config_agent):
             file.write(shell_script_content)
         time.sleep(1)
         logger.info("22222222222222222222")
-        # command = [
-        #     "sudo",
-        #     "-u",
-        #     "root",
-        #     "mv",
-        #     collectorPath,
-        #     TestPathVelo,
-        # ]
-        # ttttttt = f'{TestPathVelo}/{config_data["Configuration"]["CollectorFileName"]}'
-        logger.info("3333333333333")
-
-        # https://mssp-dev.northeurope.cloudapp.azure.com/kibana/app/dashboards#/view/b118d331-2334-4da1-85d0-626610073555?embed=true&_g=(time:(from:'now-1124h',to:'now'))&show-time-filter=true
-
-        # try:
-        #     logger.info(f"Start File MV Command is {command}")
-        #     subprocess.run(command, check=True)
-        #     logger.info("File moved successfully.")
-        # except subprocess.CalledProcessError as f:
-        #     logger.error(f"Failed to move the file. {f}")
-        # except Exception as e:
-        #     logger.error(f"Error in This Move stuff {e}")
-        logger.info("4444444444444444444")
 
         time.sleep(1)
-        logger.info("5555555555555555555555")
 
-        # if os.path.exists(ttttttt):
-        #     # dont forget to change owner
-        #     user_name = subprocess.run(
-        #         ["whoami"], stdout=subprocess.PIPE, text=True
-        #     ).stdout.strip()
-        #     command = [
-        #         "sudo",
-        #           "chown", user_name, ttttttt]
-        #     logger.info(f"sudo command command {command}")
-        #     try:
-        #         subprocess.run(command, check=True)
-        #         logger.info(f"Ownership changed successfully. {ttttttt}")
-        #     except subprocess.CalledProcessError:
-        #         logger.info(
-        #             f"Failed to change owner. The command did not run successfully. {ttttttt}"
-        #         )
-        #     except Exception as e:
-        #         logger.info(
-        #             f"An error occurred in change ownership of this file {ttttttt} error is: {e}"
-        #         )
-        # else:
-        #     logger.error(f"The file or directory {ttttttt} does not exist.")
         logger.info("66666666666666")
 
         # Make the shell script executable
@@ -313,7 +307,6 @@ def run_server_artifact(logger, config_data, config_agent):
 
         files_to_zip = [BatchFile, OsCollectorPath, NewVeloCollector, SplitScript]
         zip_file_path = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.zip'
-        # os.chmod(NewVeloCollector, 0o755)
         create_zip(files_to_zip, zip_file_path, logger)
         logger.info("cut " + zip_file_path)
 

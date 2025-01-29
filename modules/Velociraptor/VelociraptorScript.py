@@ -40,20 +40,25 @@ def run_generic_vql(query, logger):
         result = []
 
         for response in stub.Query(request):
+            logger.info("response response response response "+str(response) )
 
             if response.Response:
                 try:
                     # Try to parse the response as JSON
 
                     result =result+ json.loads(response.Response)
+                    logger.info("run_generic_vql str(response.Response) str(response.Response) ",str(response.Response) )
+                    return True
 
                 except json.JSONDecodeError:
                     # If JSON parsing fails, store the response as a string
                     result = str(response.Response)
+                    logger.info("run_generic_vql result result ",result )
+                    return True
 
                 # Print the result (you can remove this in production)
                 # print(result)
-        logger.info("run_generic_vql complete" )
+        logger.info("run_generic_vql complete " )
         # logger.info("run_generic_vql complete result sssssssssssssssssssssssssssssssssssssssssssssssssssss:" + str(result) )
 
 

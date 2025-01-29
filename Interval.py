@@ -646,19 +646,64 @@ async def run_velociraptor_alerts(time_interval):
                 response = await async_run_generic_vql(query, logger)
                 logger.info("Has response, response length:" + str(len(response)))
                 # Add the new structure
+                uniqueListAlert = []
                 for response_element in response:
-                    # logger.info("Response element loop!")
-                    response_element.update(
-                        {
-                            "AlertID": str(random.randint(1, 9999999999999)),
-                            "ClientName": client_name,
-                            "UserInput": {
-                                "UserId": "",
-                                "Status": "New",
-                                "ChangedAt": "",
-                            },
-                        }
-                    )
+                    logger.info("Has response, response_element" +  str(response_element["Artifact"] =="Custom.Windows.Detection.Usn.malwareTest" and not str(response_element["Filename"])+str(response_element["Timestamp"])  in uniqueListAlert ))
+                    if response_element["Artifact"] =="Custom.Windows.Detection.Usn.malwareTest" :
+                        if  not str(response_element["Filename"])+str(response_element["Timestamp"])  in uniqueListAlert:
+                            logger.info("There is a Sus Alert" + str(response_element))
+                            uniqueListAlert.append(str(response_element["Filename"])+str(response_element["Timestamp"]))
+                            withBackSlashRight= response_element["OSPath"].replace("\\","\\\\\\\\")
+                            logger.info("withBackSlashRight withBackSlashRight withBackSlashRight OSPath : " + withBackSlashRight)
+                            AlertQueryTime = f"""  
+                                                LET collection <= collect_client(
+                                                    client_id='{response_element["ClientId"]}',
+                                                    artifacts='Windows.NTFS.MFT', env=dict(PathRegex='{withBackSlashRight}'))
+                                                LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                                                            WHERE FlowId = collection.flow_id
+                                                            LIMIT 1
+                                                SELECT FileName,Created0x10,Created0x30,LastModified0x10,LastModified0x30,LastRecordChange0x10,LastRecordChange0x30,LastAccess0x10,LastAccess0x30 FROM source(
+                                                                client_id=collection.request.client_id,
+                                                                flow_id=collection.flow_id,
+                                                                artifact='Windows.NTFS.MFT')
+
+
+                                                """
+                            logger.info("AlertQueryTime AlertQueryTime AlertQueryTime AlertQueryTime : " + AlertQueryTime)
+                            responseAlert = await async_run_generic_vql(AlertQueryTime, logger)
+                            logger.info("Response element loop! " + str(responseAlert))
+                            if len(responseAlert)>0:
+                                for responseAlert_Element in responseAlert:
+                                    logger.info("Enter responseAlert_Element list ")
+                            else:
+                                logger.info("The File The Alert Was About Was not found create alert about it: " +response_element["OSPath"] )
+                                response_element.update(
+                                        {   "Artifact":"Python.Custom.Suspicious.File.Dont.Exist",
+                                            "AlertID": str(random.randint(1, 99999999999999999)),
+                                            "ClientName": client_name,
+                                            "UserInput": {
+                                                "UserId": "",
+                                                "Status": "New",
+                                                "ChangedAt": "",
+                                            },
+                                        }
+                                )
+
+                                
+                        else:
+                            logger.info("The Alert Already Exists And has been checked")
+                    else:
+                        response_element.update(
+                            {   
+                                "AlertID": str(random.randint(1, 99999999999999999)),
+                                "ClientName": client_name,
+                                "UserInput": {
+                                    "UserId": "",
+                                    "Status": "New",
+                                    "ChangedAt": "",
+                                },
+                            }
+                        )
                 logger.info("Adding response!")
                 collection_data.append(response)
             logger.info("Alerts succeeded. Saving alerts.json file!")
