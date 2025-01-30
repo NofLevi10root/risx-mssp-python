@@ -231,10 +231,11 @@ def run_server_artifact(logger, config_data, config_agent):
                 :: Run the PowerShell script on the most recent file
                 "7-ZipPortable/App/7-Zip/7z.exe" a -t7z -v{config_data["Configuration"]["ZipSplitSizeInMb"]}m "Results\%latestFileWithoutExtension%.7z" %latestFile% > txt.txt
 
-                :: Remove the Original Result file after creating the archive Split for Clarity proposes              
-                del "%folderPath%\%latestFile%"
+         
 
                 """
+                #        :: Remove the Original Result file after creating the archive Split for Clarity proposes              
+                # del "%folderPath%\%latestFile%"
 
             case "Mac":
                 OsCollector = "velociraptor_client"
@@ -242,7 +243,7 @@ def run_server_artifact(logger, config_data, config_agent):
                 OsCollectorPath = "velociraptor_client"
 
                 BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.sh'
-                shell_script_content = f"""#!/bin/sh
+                shell_script_content = f"""
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
                 :: Find the most recent file matching the pattern
@@ -266,7 +267,7 @@ def run_server_artifact(logger, config_data, config_agent):
                 OsCollectorPath = "velociraptor_client"
 
                 BatchFile = f'Collector/{random_string}/{config_data["Configuration"]["CollectorFileName"]}.sh'
-                shell_script_content = f"""#!/bin/sh
+                shell_script_content = f"""
                 folderPath=$(pwd)
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}
                 :: Find the most recent file matching the pattern
