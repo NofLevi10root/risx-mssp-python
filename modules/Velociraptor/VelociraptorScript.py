@@ -48,6 +48,54 @@ def run_generic_vql(query, logger):
 
                     result =result+ json.loads(response.Response)
                     logger.info("run_generic_vql str(response.Response) str(response.Response) ",str(response.Response) )
+
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, store the response as a string
+                    result = str(response.Response)
+                    logger.info("run_generic_vql result result ",result )
+
+                # Print the result (you can remove this in production)
+                # print(result)
+        logger.info("run_generic_vql complete " )
+        # logger.info("run_generic_vql complete result sssssssssssssssssssssssssssssssssssssssssssssssssssss:" + str(result) )
+
+
+        return result
+    except Exception as e:
+        logger.error("THere is an Error in run_generic_vql Error : " + str(e))
+
+
+
+
+
+def run_generic_vql_monitor(query, logger):
+    try:
+        logger.info("Run generic vql!")
+        channel = setup_connection(logger)
+        stub = api_pb2_grpc.APIStub(channel)
+        logger.info("api_pb2_grpc.APIStub(channel)")
+
+        # logger.info("Query: " + query)
+        request = api_pb2.VQLCollectorArgs(
+            max_wait=10,
+            max_row=100,
+            Query=[
+                api_pb2.VQLRequest(
+                    VQL=query,
+                )
+            ],
+        )
+        result = []
+
+        for response in stub.Query(request):
+            logger.info("response response response response "+str(response) )
+
+            if response.Response:
+                try:
+                    # Try to parse the response as JSON
+
+                    result =result+ json.loads(response.Response)
+                    logger.info("run_generic_vql str(response.Response) str(response.Response) ",str(response.Response) )
                     return True
 
                 except json.JSONDecodeError:
@@ -65,6 +113,12 @@ def run_generic_vql(query, logger):
         return result
     except Exception as e:
         logger.error("THere is an Error in run_generic_vql Error : " + str(e))
+
+
+
+
+
+        
 
 
 def run_server_artifact(artifact_name, logger, parameters = ""):

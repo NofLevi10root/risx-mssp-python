@@ -365,7 +365,6 @@ async def run_updates_daily(time_interval):
                 os.path.join("response_folder", "velociraptor_clients.json"), "w"
             ) as f:
                 json.dump(velociraptor_client_dict, f)
-            logger.info("Modules Update Time To Sleep:" + str(time_to_sleep) + " hours")
             logger.info("Update modules:" + str(artifact_list))
             logger.info("Running daily task!")
             for artifact_name in artifact_list:
@@ -373,6 +372,7 @@ async def run_updates_daily(time_interval):
                 await asyncio.sleep(2)
 
             connection.close()
+            logger.info("Modules Update Time To Sleep:" + str(time_to_sleep) + " hours")
         except Exception as e:
             logger.error(f"Failed in daily task!\nError Message: {str(e)}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")

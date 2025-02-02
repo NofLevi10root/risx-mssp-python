@@ -15,7 +15,7 @@ import asyncio
 import shutil
 # Wrapper for run_generic_vql
 def run_generic_vql(query, logger):
-    return modules.Velociraptor.VelociraptorScript.run_generic_vql(query, logger)
+    return modules.Velociraptor.VelociraptorScript.run_generic_vql_monitor(query, logger)
 
 
 async def async_run_generic_vql(query, logger):
