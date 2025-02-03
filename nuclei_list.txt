@@ -1,1 +1,12 @@
-telit.com
+213.8.178.222/32
+ scanme.nmap.org
+ 18.168.185.151/32
+ testphp.vulnweb.com
+ 176.28.50.165
+ https://google-gruyere.appspot.com/490920309218955523485442447154826573573/
+ http://192.168.1.58
+ https://sbisrael.co.il
+ 45.33.32.156
+ 212.179.238.58/31
+ hippo.co.il
+ 10root.com

@@ -628,7 +628,15 @@ async def run_velociraptor_alerts(time_interval):
                 logger
             )
             collection_data = []
-            alerts_with_show_false = '","'.join([alert for alert, details in config_data["General"]["AlertDictionary"].items() if not details.get("Log", True)])
+            alerts_with_show_false = '","'.join(
+                [
+                    alert
+                    for alert, details in config_data["General"][
+                        "AlertDictionary"
+                    ].items()
+                    if not details.get("Log", True)
+                ]
+            )
 
             for client_name, client_id in clients_dict.items():
                 logger.info("Getting alerts from: " + str(client_name))
@@ -637,24 +645,53 @@ async def run_velociraptor_alerts(time_interval):
         SELECT * FROM foreach(row=x.artifacts,query={{
         SELECT _value AS Artifact, *
         FROM monitoring(artifact=_value, client_id="{client_id}") WHERE _ts > {previous_timestamp} 
-        and not Artifact in ("AlonBerg.Best.Designer","{alerts_with_show_false}")
+        and not Artifact in ("Example.Alert.To.Not.Run","{alerts_with_show_false}")
         ORDER BY _ts DESC 
         limit {config_data["General"]["IntervalConfigurations"]["AlertsConfiguration"]["AlertResultPerArtifactLimit"]}
         }})
         """
-                logger.info("query query query queryqueryquery query query queryquery query query query query query query query query : " + query)
+                logger.info(
+                    "query query query queryqueryquery query query queryquery query query query query query query query query : "
+                    + query
+                )
                 response = await async_run_generic_vql(query, logger)
                 logger.info("Has response, response length:" + str(len(response)))
                 # Add the new structure
                 uniqueListAlert = []
+                filteredResponse = []
+
                 for response_element in response:
-                    logger.info("Has response, response_element" +  str(response_element["Artifact"] =="Custom.Windows.Detection.Usn.malwareTest" and not str(response_element["Filename"])+str(response_element["Timestamp"])  in uniqueListAlert ))
-                    if response_element["Artifact"] =="Custom.Windows.Detection.Usn.malwareTest" :
-                        if  not str(response_element["Filename"])+str(response_element["Timestamp"])  in uniqueListAlert:
+                    logger.info(
+                        "Has response, response_element"
+                        + str(
+                            response_element["Artifact"]
+                            == "Custom.Windows.Detection.Usn.malwareTest"
+                            and not str(response_element["Filename"])
+                            + str(response_element["Timestamp"])
+                            in uniqueListAlert
+                        )
+                    )
+                    if (
+                        response_element["Artifact"]
+                        == "Custom.Windows.Detection.Usn.malwareTest"
+                    ):
+                        if (
+                            not str(response_element["Filename"])
+                            + str(response_element["Timestamp"])
+                            in uniqueListAlert
+                        ):
                             logger.info("There is a Sus Alert" + str(response_element))
-                            uniqueListAlert.append(str(response_element["Filename"])+str(response_element["Timestamp"]))
-                            withBackSlashRight= response_element["OSPath"].replace("\\","\\\\\\\\")
-                            logger.info("withBackSlashRight withBackSlashRight withBackSlashRight OSPath : " + withBackSlashRight)
+                            uniqueListAlert.append(
+                                str(response_element["Filename"])
+                                + str(response_element["Timestamp"])
+                            )
+                            withBackSlashRight = response_element["OSPath"].replace(
+                                "\\", "\\\\\\\\"
+                            )
+                            logger.info(
+                                "withBackSlashRight withBackSlashRight withBackSlashRight OSPath : "
+                                + withBackSlashRight
+                            )
                             AlertQueryTime = f"""  
                                                 LET collection <= collect_client(
                                                     client_id='{response_element["ClientId"]}',
@@ -669,32 +706,66 @@ async def run_velociraptor_alerts(time_interval):
 
 
                                                 """
-                            logger.info("AlertQueryTime AlertQueryTime AlertQueryTime AlertQueryTime : " + AlertQueryTime)
-                            responseAlert = await async_run_generic_vql(AlertQueryTime, logger)
+                            logger.info(
+                                "AlertQueryTime AlertQueryTime AlertQueryTime AlertQueryTime : "
+                                + AlertQueryTime
+                            )
+                            responseAlert = await async_run_generic_vql(
+                                AlertQueryTime, logger
+                            )
                             logger.info("Response element loop! " + str(responseAlert))
-                            if len(responseAlert)>0:
+                            if len(responseAlert) > 0:
                                 for responseAlert_Element in responseAlert:
                                     logger.info("Enter responseAlert_Element list ")
-                            else:
-                                logger.info("The File The Alert Was About Was not found create alert about it: " +response_element["OSPath"] )
-                                response_element.update(
-                                        {   "Artifact":"Python.Custom.Suspicious.File.Dont.Exist",
-                                            "AlertID": str(random.randint(1, 99999999999999999)),
-                                            "ClientName": client_name,
-                                            "UserInput": {
-                                                "UserId": "",
-                                                "Status": "New",
-                                                "ChangedAt": "",
-                                            },
-                                        }
-                                )
+                                    if (
+                                        (
+                                            responseAlert_Element["Created0x10"]
+                                            != responseAlert_Element["Created0x30"]
+                                        )
+                                        or (
+                                            responseAlert_Element["LastModified0x10"]
+                                            != responseAlert_Element["LastModified0x30"]
+                                        )
+                                        or (
+                                            responseAlert_Element["LastRecordChange0x10"]
+                                            != responseAlert_Element["LastRecordChange0x30"]
+                                        )
+                                        or (
+                                            responseAlert_Element["LastAccess0x10"]
+                                            != responseAlert_Element["LastAccess0x30"]
+                                        )
+                                    ):
 
-                                
+                                        logger.info(f"Enter Problem and Mismatch OF timestamp on file :  {responseAlert_Element['FileName']}")
+                                    else:
+                                        logger.info(f"No Problem OF timestamp on file : {responseAlert_Element['FileName']}")
+                            else:
+                                logger.info(
+                                    "The File The Alert Was About Was not found create alert about it: "
+                                    + response_element["OSPath"]
+                                )
+                                response_element.update(
+                                    {
+                                        "Artifact": "Python.Custom.Suspicious.File.Dont.Exist",
+                                        "AlertID": str(
+                                            random.randint(1, 99999999999999999999)
+                                        ),
+                                        "ClientName": client_name,
+                                        "UserInput": {
+                                            "UserId": "",
+                                            "Status": "New",
+                                            "ChangedAt": "",
+                                        },
+                                    }
+                                )
+                                filteredResponse.append(response_element)
+
                         else:
                             logger.info("The Alert Already Exists And has been checked")
+                            
                     else:
                         response_element.update(
-                            {   
+                            {
                                 "AlertID": str(random.randint(1, 99999999999999999)),
                                 "ClientName": client_name,
                                 "UserInput": {
@@ -704,8 +775,9 @@ async def run_velociraptor_alerts(time_interval):
                                 },
                             }
                         )
+                        filteredResponse.append(response_element)
                 logger.info("Adding response!")
-                collection_data.append(response)
+                collection_data.append(filteredResponse)
             logger.info("Alerts succeeded. Saving alerts.json file!")
             await sort_alerts(previous_collection, collection_data, logger)
             connection.close()

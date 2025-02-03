@@ -47,7 +47,7 @@ def connect_timesketch_api(config, logger):
         logger.info("TimeSketch api connected!")
         return api
     except Exception as e:
-        logger.error(f"Error: Missing key {e} in configuration file.")
+        logger.error(traceback.format_exc())
         return None
 
 def is_plaso_running(logger):
@@ -186,7 +186,12 @@ def get_command2(config, api, row, host_name, user_name, client_name, logger):
     row["LastIntervalDate"] = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
     row["ExpireDate"] = formatted_future_datetime
     logger.info("Checking if sketch exists or not [Need timesketch importer connection!]")
-    timesketch_importer_path = f"/home/{user_name}/.local/bin/timesketch_importer"
+    timesketch_importer_path = ""
+    # When the shell is inside a container the user name will always be node else its dev version
+    if(user_name == "node"):
+        timesketch_importer_path = f"/usr/local/bin/timesketch_importer"
+    else:
+        timesketch_importer_path = f"/home/{user_name}/.local/bin/timesketch_importer"
 
     # Add a check for sketch_id and construct command
     if sketch_id is not None:
@@ -335,9 +340,13 @@ def start_timesketch(row, general_config, logger):
 
             #row["Status"] = "Hunting"
             row["Status"] = "Complete"
+            logger.info("Removing plaso containers!")
+            additionals.funcs.run_subprocess('docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
             return row
     except Exception as e:
         logger.error("TimeSketch unknown error:" + str(e))
         row["Status"] = "Failed"
         row["Error"] = "Unknown error:" + str(e)
+        logger.info("Removing plaso containers!")
+        additionals.funcs.run_subprocess('docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
         return row

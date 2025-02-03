@@ -325,7 +325,7 @@ def read_env_file(logger):
         logger.error("The .env file is empty or not found. Exiting.")
         quit()
     else:
-        logger.info("Environment Variables:" +  str(env_dict))
+        #logger.info("Environment Variables:" +  str(env_dict))
         return env_dict
 
 def return_value_if_key_exists(dict_object, key):
