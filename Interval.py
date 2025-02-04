@@ -212,8 +212,60 @@ import threading
 import pandas as pd
 import random
 import psutil
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
+import string
+
+
+def id_generator(size=15, chars=string.ascii_letters + string.digits):
+    return "".join(random.choice(chars) for _ in range(size))
+
+
+def adjust_datetime(date_string, seconds, logger, operation="subtract"):
+    """Adjust the datetime by adding or subtracting a specified number of seconds.
+
+    Args:
+    date_string (str): The datetime string in ISO 8601 format ending with 'Z'.
+    seconds (int): The number of seconds to adjust.
+    operation (str): 'add' to add the seconds, 'subtract' to subtract the seconds.
+
+    Returns:
+    str: The adjusted datetime in ISO 8601 format ending with 'Z'.
+    """
+    try:
+        # Prepare the date string by replacing 'Z' with '+00:00' and truncating fractional seconds to six places
+        if "." in date_string:
+            base, frac = date_string.replace("Z", "").split(".")
+            frac = frac[:6]  # Keep only up to microseconds
+            date_string = f"{base}.{frac}+00:00"
+        else:
+            date_string = date_string.replace("Z", "+00:00")
+
+        # Convert the date string to a datetime object
+        dt = datetime.fromisoformat(date_string)
+
+        # Determine the operation to perform
+        if operation == "add":
+            new_dt = dt + timedelta(seconds=seconds)
+        elif operation == "subtract":
+            new_dt = dt - timedelta(seconds=seconds)
+        else:
+            logger.error(
+                f"Invalid operation specified: {operation}. Use 'add' or 'subtract'."
+            )
+            raise ValueError(
+                f"Invalid operation specified: {operation}. Use 'add' or 'subtract'."
+            )
+
+        # Convert back to the same string format with 'Z' to indicate UTC
+        new_date_string = (
+            new_dt.isoformat()[:26] + "Z"
+        )  # Ensure to cut any excess if any
+        return new_date_string
+
+    except Exception as e:
+        logger.error(f"Error adjusting datetime: {e}")
+        raise  # Reraising the exception to notify callers of the function failure
 
 
 def terminate_duplicate_scripts(script_name, logger):
@@ -727,8 +779,12 @@ async def run_velociraptor_alerts(time_interval):
                                             != responseAlert_Element["LastModified0x30"]
                                         )
                                         or (
-                                            responseAlert_Element["LastRecordChange0x10"]
-                                            != responseAlert_Element["LastRecordChange0x30"]
+                                            responseAlert_Element[
+                                                "LastRecordChange0x10"
+                                            ]
+                                            != responseAlert_Element[
+                                                "LastRecordChange0x30"
+                                            ]
                                         )
                                         or (
                                             responseAlert_Element["LastAccess0x10"]
@@ -736,9 +792,87 @@ async def run_velociraptor_alerts(time_interval):
                                         )
                                     ):
 
-                                        logger.info(f"Enter Problem and Mismatch OF timestamp on file :  {responseAlert_Element['FileName']}")
+                                        logger.info(
+                                            f"Enter Problem and Mismatch OF timestamp on file :  {responseAlert_Element['FileName']}"
+                                        )
+                                        # run this artifact Windows.Forensics.Usn
+                                        timeOfFileAlert = response_element['Timestamp']
+                                        timeBackAlert = adjust_datetime(
+                                            timeOfFileAlert,
+                                            config_data["General"][
+                                                "IntervalConfigurations"
+                                            ]["AlertsConfiguration"][
+                                                "SuspiciousFileSecondsCheck"
+                                            ],
+                                            logger,
+                                            "subtract",
+                                        )
+                                        timeAheadAlert = adjust_datetime(
+                                            timeOfFileAlert,
+                                            config_data["General"][
+                                                "IntervalConfigurations"
+                                            ]["AlertsConfiguration"][
+                                                "SuspiciousFileSecondsCheck"
+                                            ],
+                                            logger,
+                                            "add",
+                                        )
+
+                                        SusFilesQuery = f"""  
+                                                            LET collection <= collect_client(
+                                                                client_id='{response_element["ClientId"]}',
+                                                                artifacts='Windows.Forensics.Usn', env=dict(DateAfter='{timeBackAlert}',DateBefore='{timeAheadAlert}'))
+                                                            LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                                                                        WHERE FlowId = collection.flow_id
+                                                                        LIMIT 1
+                                                            SELECT * FROM source(
+                                                                            client_id=collection.request.client_id,
+                                                                            flow_id=collection.flow_id,
+                                                                            artifact='Windows.Forensics.Usn')
+
+
+                                                            """
+                                        logger.info(
+                                            f"This is the SusFilesQuery : {SusFilesQuery}"
+                                        )
+                                        SusFilesAlert = await async_run_generic_vql(SusFilesQuery,logger)
+                                        logger.info(f"This is the results : {str(SusFilesAlert)}")
+                                        if len(SusFilesAlert) >= 10:
+                                            logger.info(f"all sus files : {', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert)}")
+                                            response_element.update(
+                                                {
+                                                    "Artifact": "Python.Suspicious.File.Found",
+                                                    "AlertID": id_generator(),
+                                                    "ClientName": client_name,
+                                                    "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
+                                                    "UserInput": {
+                                                        "UserId": "",
+                                                        "Status": "New",
+                                                        "ChangedAt": "",
+                                                    },
+                                                }
+                                            )
+                                            filteredResponse.append(response_element)   
+                                        else:
+                                            logger.info(f"Not enough files changed ")
+                                            response_element.update(
+                                                {
+                                                    "Artifact": "Python.Suspicious.File.Found.nothing.Happened",
+                                                    "AlertID": id_generator(),
+                                                    "ClientName": client_name,
+                                                    "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
+                                                    "UserInput": {
+                                                        "UserId": "",
+                                                        "Status": "New",
+                                                        "ChangedAt": "",
+                                                    },
+                                                }
+                                            )
+                                            filteredResponse.append(response_element) 
                                     else:
-                                        logger.info(f"No Problem OF timestamp on file : {responseAlert_Element['FileName']}")
+                                        logger.info(
+                                            f"No Problem OF timestamp on file : {responseAlert_Element['FileName']}"
+                                        )
                             else:
                                 logger.info(
                                     "The File The Alert Was About Was not found create alert about it: "
@@ -746,10 +880,8 @@ async def run_velociraptor_alerts(time_interval):
                                 )
                                 response_element.update(
                                     {
-                                        "Artifact": "Python.Custom.Suspicious.File.Dont.Exist",
-                                        "AlertID": str(
-                                            random.randint(1, 99999999999999999999)
-                                        ),
+                                        "Artifact": "Python.Suspicious.File.Dont.Exist",
+                                        "AlertID": id_generator(),
                                         "ClientName": client_name,
                                         "UserInput": {
                                             "UserId": "",
@@ -762,11 +894,11 @@ async def run_velociraptor_alerts(time_interval):
 
                         else:
                             logger.info("The Alert Already Exists And has been checked")
-                            
+
                     else:
                         response_element.update(
                             {
-                                "AlertID": str(random.randint(1, 99999999999999999)),
+                                "AlertID": id_generator(),
                                 "ClientName": client_name,
                                 "UserInput": {
                                     "UserId": "",
