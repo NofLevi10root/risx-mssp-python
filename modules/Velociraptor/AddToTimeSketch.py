@@ -304,15 +304,15 @@ def start_timesketch(row, general_config, logger):
                         ram = additionals.funcs.closest_memory_percentage(int(row['Arguments']['MemoryThrottling'])) + "g"
                         logger.info("Number of CPUs:" + cpus)
                         logger.info("Number of Memory:" + ram)
-                        command1 = f"docker run -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data -v /home/tenroot/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
+                        command1 = f"docker run -v /home/tenroot/setup_platform/workdir/plaso/:/data -v /home/tenroot/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
                         api = connect_timesketch_api(general_config, logger)
                         #Check if there existing sketch or not
                         row, command2 = get_command2(general_config, api, row, host_name, user_name, client_name, logger)
                         logger.info("Removing previous artifacts.plaso")
                         # Return after loading file
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
+                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
+                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
+                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
                         logger.info("Running plaso!")
                         # Return after loading file
                         additionals.funcs.run_subprocess(command1,"Processing completed", logger)
