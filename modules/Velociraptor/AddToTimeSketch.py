@@ -290,7 +290,10 @@ def start_timesketch(row, general_config, logger):
                         flow_id = run_artifact_on_client(channel=channel, client_id=client_id, kape_collection=row["Arguments"]["KapeCollection"], timeout = int(row["ArtifactTimeOutInMinutes"]), cpu_limit = cpu_limit, logger=logger)
                         logger.info(f"flowid: {flow_id}")
                         # Get the username
-                        user_name = subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()
+                        # user_name = subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()
+                        user_name="tenroot"
+
+                        
 
                         # Get the hostname
                         host_name = subprocess.run(['uname', '-n'], stdout=subprocess.PIPE, text=True).stdout.strip()
@@ -301,10 +304,7 @@ def start_timesketch(row, general_config, logger):
                         ram = additionals.funcs.closest_memory_percentage(int(row['Arguments']['MemoryThrottling'])) + "g"
                         logger.info("Number of CPUs:" + cpus)
                         logger.info("Number of Memory:" + ram)
-                        if(user_name == "node"):
-                            command1 = f"docker run -v /home/{user_name}/:/data -v /velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
-                        else:
-                            command1 = f"docker run -v /home/{user_name}/:/data -v /home/{user_name}/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
+                        command1 = f"docker run -v /home/{user_name}/:/data -v /home/{user_name}/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
                         api = connect_timesketch_api(general_config, logger)
                         #Check if there existing sketch or not
                         row, command2 = get_command2(general_config, api, row, host_name, user_name, client_name, logger)
@@ -326,8 +326,8 @@ def start_timesketch(row, general_config, logger):
                         additionals.funcs.run_subprocess(command2, "", logger)
 
                         #additionals.funcs.run_subprocess(f"docker run --rm -v /home/{user_name}/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
-                        time.sleep(120)
-                        #time.sleep(30)
+                        # time.sleep(120)
+                        time.sleep(30)
                         logger.info("SketchID:" + str(row["UniqueID"]["SketchID"]))
                         logger.info("SketchName:" + str(row["Arguments"]["SketchName"]))
                         logger.info("TimeLine ID:" + row["UniqueID"]["TimelineID"])
