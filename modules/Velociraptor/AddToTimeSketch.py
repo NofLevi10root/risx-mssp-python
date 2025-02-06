@@ -54,7 +54,7 @@ def is_plaso_running(logger):
     try:
         logger.info("In plaso_running function!")
         # Run the docker ps command
-        result = subprocess.run(['docker', 'ps'], capture_output=True, text=True, check=True)
+        result = subprocess.run(['sudo','docker', 'ps'], capture_output=True, text=True, check=True)
         # Check if log2timeline/plaso is in the output
         return 'log2timeline/plaso' in result.stdout
     except subprocess.CalledProcessError as e:
@@ -304,15 +304,15 @@ def start_timesketch(row, general_config, logger):
                         ram = additionals.funcs.closest_memory_percentage(int(row['Arguments']['MemoryThrottling'])) + "g"
                         logger.info("Number of CPUs:" + cpus)
                         logger.info("Number of Memory:" + ram)
-                        command1 = f"docker run -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data -v /home/tenroot/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
+                        command1 = f"sudo docker run -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data -v /home/tenroot/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
                         api = connect_timesketch_api(general_config, logger)
                         #Check if there existing sketch or not
                         row, command2 = get_command2(general_config, api, row, host_name, user_name, client_name, logger)
                         logger.info("Removing previous artifacts.plaso")
                         # Return after loading file
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
-                        additionals.funcs.run_subprocess(f"docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
                         logger.info("Running plaso!")
                         # Return after loading file
                         additionals.funcs.run_subprocess(command1,"Processing completed", logger)
@@ -344,12 +344,12 @@ def start_timesketch(row, general_config, logger):
             #row["Status"] = "Hunting"
             row["Status"] = "Complete"
             logger.info("Removing plaso containers!")
-            additionals.funcs.run_subprocess('docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
+            additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
             return row
     except Exception as e:
         logger.error("TimeSketch unknown error:" + str(e))
         row["Status"] = "Failed"
         row["Error"] = "Unknown error:" + str(e)
         logger.info("Removing plaso containers!")
-        additionals.funcs.run_subprocess('docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
+        additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
         return row
