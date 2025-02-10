@@ -344,12 +344,12 @@ def start_timesketch(row, general_config, logger):
             #row["Status"] = "Hunting"
             row["Status"] = "Complete"
             logger.info("Removing plaso containers!")
-            additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
+            additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | sudo xargs -r docker rm -f',"", logger)
             return row
     except Exception as e:
         logger.error("TimeSketch unknown error:" + str(e))
         row["Status"] = "Failed"
         row["Error"] = "Unknown error:" + str(e)
         logger.info("Removing plaso containers!")
-        additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | xargs -r docker rm -f',"", logger)
+        additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | sudo xargs -r docker rm -f',"", logger)
         return row
