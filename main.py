@@ -47,6 +47,7 @@ def main():
 
     request_status_count_after = len(config_data["RequestStatus"])
     logger.info("Number of objects inside RequestStatus after new:" + str(request_status_count_after))
+    elasticIp=config_data['ClientData']['API']['Elastic']["Ip"]
 
 
     additionals.funcs.update_json(connection, config_data, previous_config_date, False, logger)
@@ -58,13 +59,13 @@ def main():
             request = modules.Velociraptor.VelociraptorScript.run_artifact(request, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "Shodan":
-            request = modules.SmallModules.SmallModules.run_shodan(request, config_data["ClientData"]["API"]["Shodan"], request["Population"], logger)
+            request = modules.SmallModules.SmallModules.run_shodan(request, config_data["ClientData"]["API"]["Shodan"], request["Population"],elasticIp, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "LeakCheck":
-            request = modules.SmallModules.SmallModules.run_leakcheck(request, config_data["ClientData"]["API"]["LeakCheck"], request["Population"], logger)
+            request = modules.SmallModules.SmallModules.run_leakcheck(request, config_data["ClientData"]["API"]["LeakCheck"], request["Population"],elasticIp, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "Nuclei":
-            request = modules.Nuclei.NucleiScript.start_nuclei(request, logger)
+            request = modules.Nuclei.NucleiScript.start_nuclei(request,elasticIp, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "TimeSketch":
             request = modules.Velociraptor.AddToTimeSketch.start_timesketch(request, config_data, logger)

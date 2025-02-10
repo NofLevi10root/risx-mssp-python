@@ -105,7 +105,7 @@ def ensure_executable(file_path):
         print(f"Added execute permission to: {file_path}")
 
 
-def start_nuclei(row, logger):
+def start_nuclei(row,elasticIp, logger):
     try:
         logger.info("Setting variables!")
         #targets_ip = ', '.join(row["Population"])
@@ -175,7 +175,7 @@ def start_nuclei(row, logger):
             nuclei_elastic_format_fixer(row["ResponsePath"], row["Population"], logger)
             #nuclei_elastic_format_fixer("response_folder/response_Nuclei_13-10-2024-10-54-59.json", row["Population"], logger)
             logger.info("Uploading nuclei to elastic!")
-            additionals.elastic_api.enter_data(row["ResponsePath"], "artifact_nuclei", logger)
+            additionals.elastic_api.enter_data(row["ResponsePath"], "artifact_nuclei",elasticIp, logger)
             logger.info("End uploading!")
         except Exception as e:
             logger.warning("Elastic error:" + str(e))

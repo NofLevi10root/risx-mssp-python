@@ -144,7 +144,7 @@ def format_shodan_json(input_file, output_file, logger):
     except IOError as e:
         logger.error(f"IOError while saving to {output_file}: {e}")
         
-def run_shodan(row, api_key, population, logger):
+def run_shodan(row, api_key, population,elasticIp, logger):
     logger.info("Entering shodan!")
     
     if not api_key:
@@ -196,7 +196,7 @@ def run_shodan(row, api_key, population, logger):
     format_shodan_json(row["ResponsePath"], elastic_path, logger)
     
     logger.info("Uploading file to elastic!")
-    additionals.elastic_api.enter_data(elastic_path, "artifact_shodan", logger)
+    additionals.elastic_api.enter_data(elastic_path, "artifact_shodan",elasticIp, logger)
 
     return row
 
@@ -251,7 +251,7 @@ def filter_recent_breaches(data, days=7):
     return data
 
 
-def run_leakcheck(row, api_key, population, logger):
+def run_leakcheck(row, api_key, population,elasticIp, logger):
     max_retries = 3
     backoff_factor = 1
     delay_between_requests = 1  # Delay in seconds between requests
@@ -326,7 +326,7 @@ def run_leakcheck(row, api_key, population, logger):
     elastic_path = row["ResponsePath"].split(".")[0] + "Elastic.json"
     process_leakcheck_json(leakcheck_list, elastic_path, logger)
     logger.info("Uploading file to elastic!")
-    additionals.elastic_api.enter_data(elastic_path, "artifact_leakcheck", logger)
+    additionals.elastic_api.enter_data(elastic_path, "artifact_leakcheck",elasticIp, logger)
     
     row["UniqueID"] = str(random.randint(9000000, 99999999))
     row["ExpireDate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")

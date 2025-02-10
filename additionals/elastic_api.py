@@ -75,16 +75,15 @@ def upload_data_to_elasticsearch(es, index_name, data_table, logger):
         logger.error(f"Unexpected error during bulk upload to Elasticsearch: {e}")
         raise
 
-def enter_data(file_path, index_name, logger):
+def enter_data(file_path, index_name,elasticIp, logger):
     try:
         logger.info("First argument is input path, second argument is index name")
         logger.info(f"file_path: {file_path}")
         logger.info(f"index_name: {index_name}")
-        es_host = 'localhost'
         es_port = 9200
 
         # Connect to Elasticsearch
-        es = connect_to_elasticsearch(es_host, es_port, logger)
+        es = connect_to_elasticsearch(elasticIp, es_port, logger)
         
         # Create the index (if it doesn't exist)
         create_index(es, index_name, logger)
