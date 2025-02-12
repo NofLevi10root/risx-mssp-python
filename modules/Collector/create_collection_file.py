@@ -210,7 +210,11 @@ def run_server_artifact(logger, config_data, config_agent):
                 @echo off
 
                 :: Define the folder where the files are generated
-                set "folderPath=%cd%"
+             	set "folderPath=%~dp0"
+	        	echo folderPath is set to: %folderPath%
+
+	        	:: Change to the working directory
+	        	cd /d "%folderPath%"
 
                 :: Run Velociraptor command to generate the files
                 {OsCollector} -- --embedded_config {config_data["Configuration"]["CollectorFileName"]}        
@@ -232,11 +236,10 @@ def run_server_artifact(logger, config_data, config_agent):
                 :: Run the PowerShell script on the most recent file
                 "7-ZipPortable/App/7-Zip/7z.exe" a -t7z -v{config_data["Configuration"]["ZipSplitSizeInMb"]}m "Results\%latestFileWithoutExtension%.7z" %latestFile% > txt.txt
 
-         
+                :: Remove the Original Result file after creating the archive Split for Clarity proposes
+                del "%folderPath%\%latestFile%"
 
                 """
-                #        :: Remove the Original Result file after creating the archive Split for Clarity proposes
-                # del "%folderPath%\%latestFile%"
 
             case "Mac":
                 OsCollector = "velociraptor_client"
