@@ -656,6 +656,192 @@ async def sort_alerts(previous_collection_data, collection_data, logger):
         logger.error(f"An error occurred during processing: {e}")
         return None, None
 
+async def malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger):
+    try:
+        logger.info("Entering malware_func")
+        
+        logger.info(f"response_element keys: {list(response_element.keys()) if isinstance(response_element, dict) else 'Not a dictionary'}")
+        logger.info(f"config_data keys: {list(config_data.keys()) if isinstance(config_data, dict) else 'Not a dictionary'}")
+        
+        # Check if we've already processed this alert
+        try:
+            logger.info("About to access Filename and Timestamp")
+            filename = response_element.get('Filename')
+            timestamp = response_element.get('Timestamp')
+            
+            if filename is None or timestamp is None:
+                logger.error(f"Missing required keys in response_element - Filename: {filename is not None}, Timestamp: {timestamp is not None}")
+                return response_element
+                
+            alert_key = f"{filename}{timestamp}"
+            logger.info(f"Generated alert_key: {alert_key}")
+            
+            if alert_key not in uniqueListAlert:
+                logger.info(f"Suspicious Alert detected: {response_element}")
+                uniqueListAlert.append(alert_key)
+                
+                try:
+                    # Get time range for the USN check based on when the suspicious file was detected
+                    alert_time = timestamp
+                    logger.info(f"Using alert_time: {alert_time}")
+                    
+                    # Check config data structure
+                    seconds_check_path = config_data.get("General", {}).get("IntervalConfigurations", {}).get("AlertsConfiguration", {}).get("SuspiciousFileSecondsCheck")
+                    logger.info(f"SuspiciousFileSecondsCheck value: {seconds_check_path}")
+                    
+                    if seconds_check_path is None:
+                        logger.error("Missing SuspiciousFileSecondsCheck configuration")
+                        return response_element
+                    
+                    time_back = adjust_datetime(
+                        alert_time,
+                        seconds_check_path,
+                        logger,
+                        "subtract"
+                    )
+                    time_ahead = adjust_datetime(
+                        alert_time,
+                        seconds_check_path,
+                        logger,
+                        "add"
+                    )
+                    
+                    logger.info(f"Time range calculated - back: {time_back}, ahead: {time_ahead}")
+                    
+                    # Check for client_id
+                    client_id = response_element.get("ClientId")
+                    if not client_id:
+                        logger.error("Missing ClientId in response_element")
+                        return response_element
+                        
+                    # Query to find all changed files during this time period using Windows.Forensics.Usn
+                    usn_query = f"""  
+                        LET collection <= collect_client(
+                            client_id='{client_id}',
+                            artifacts='Windows.Forensics.Usn', 
+                            env=dict(DateAfter='{time_back}',DateBefore='{time_ahead}',FileNameRegex='.*(txt|csv)$'))
+                        LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                            WHERE FlowId = collection.flow_id
+                            LIMIT 1
+                        SELECT * FROM source(
+                            client_id=collection.request.client_id,
+                            flow_id=collection.flow_id,
+                            artifact='Windows.Forensics.Usn')
+                    """
+                    # to add this to after test:
+                    #
+                    logger.info(f"Running USN query to find changed text/CSV files: {usn_query}")
+                    
+                    try:
+                        usn_results = await async_run_generic_vql(usn_query, logger)
+                        logger.info(f"USN query returned {len(usn_results)} files.")
+                        logger.info(f"USN values:" + str(usn_results))
+                        
+                        suspicious_files = []
+                        # For each text/CSV file found, check MFT fors timestamp discrepancies
+                        for file_data in usn_results:
+                            try:
+                                # Check if OSPath or FullPath is available in file_data
+                                file_path = file_data.get("FullPath", file_data.get("OSPath", ""))
+                                if not file_path:
+                                    logger.warning(f"No path found for file: {file_data.get('Filename', 'Unknown file')}")
+                                    continue
+                                
+                                # Properly escape backslashes in the path for the query
+                                escaped_path = file_path.replace("\\", "\\\\\\\\")
+                                logger.info(f"Checking MFT for file: {file_data.get('Filename', 'Unknown')}, path: {escaped_path}")
+                                
+                                # Query to check timestamp correlation using MFT
+                                mft_query = f"""  
+                                    LET collection <= collect_client(
+                                        client_id='{client_id}',
+                                        artifacts='Windows.NTFS.MFT', 
+                                        env=dict(PathRegex='{escaped_path}'))
+                                    LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                                        WHERE FlowId = collection.flow_id
+                                        LIMIT 1
+                                    SELECT FileName,Created0x10,Created0x30,LastModified0x10,LastModified0x30,
+                                            LastRecordChange0x10,LastRecordChange0x30,LastAccess0x10,LastAccess0x30 
+                                    FROM source(
+                                        client_id=collection.request.client_id,
+                                        flow_id=collection.flow_id,
+                                        artifact='Windows.NTFS.MFT')
+                                """
+                                
+                                logger.info(f"Running MFT query for {file_data.get('Filename', 'Unknown')}")
+                                
+                                try:
+                                    mft_response = await async_run_generic_vql(mft_query, logger)
+                                    logger.info(f"MFT query returned {len(mft_response)} entries for {file_data.get('Filename', 'Unknown')}")
+                                    
+                                    # Check for timestamp discrepancies
+                                    for file_entry in mft_response:
+                                        try:
+                                            if (file_entry.get("Created0x10") != file_entry.get("Created0x30") or
+                                                file_entry.get("LastModified0x10") != file_entry.get("LastModified0x30") or
+                                                file_entry.get("LastRecordChange0x10") != file_entry.get("LastRecordChange0x30") or
+                                                file_entry.get("LastAccess0x10") != file_entry.get("LastAccess0x30")):
+                                                
+                                                logger.info(f"Timestamp discrepancy detected in file: {file_entry.get('FileName', 'Unknown')}")
+                                                suspicious_files.append(file_data.get('Filename', 'Unknown'))
+                                                break  # Found a discrepancy in this file, move to next file
+                                        except Exception as e:
+                                            logger.error(f"Error checking timestamps for file entry: {str(e)}")
+                                except Exception as e:
+                                    logger.error(f"Error in MFT query: {str(e)}")
+                            except Exception as e:
+                                logger.error(f"Error processing file data: {str(e)}")
+                        
+                        # Create alert based on findings
+                        try:
+                            if suspicious_files:
+                                suspicious_files_str = ', '.join(suspicious_files)
+                                logger.info(f"Found {len(suspicious_files)} files with timestamp discrepancies: {suspicious_files_str}")
+                                
+                                response_element.update({
+                                    "Artifact": "Python.Suspicious.File.Found",
+                                    "AlertID": id_generator(),
+                                    "ClientName": client_name,
+                                    "SuspiciousFileList": suspicious_files_str,
+                                    "UserInput": {
+                                        "UserId": "",
+                                        "Status": "New",
+                                        "ChangedAt": "",
+                                    }
+                                })
+                                filteredResponse.append(response_element)
+                            else:
+                                logger.info("No files with timestamp discrepancies found")
+                                response_element.update({
+                                    "Artifact": "Python.Suspicious.File.No.Discrepancies",
+                                    "AlertID": id_generator(),
+                                    "ClientName": client_name,
+                                    "UserInput": {
+                                        "UserId": "",
+                                        "Status": "New", 
+                                        "ChangedAt": "",
+                                    }
+                                })
+                                filteredResponse.append(response_element)
+                        except Exception as e:
+                            logger.error(f"Error creating alert: {str(e)}")
+                    except Exception as e:
+                        logger.error(f"Error in USN query: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error calculating time range: {str(e)}")
+            else:
+                logger.info("This alert has already been processed")
+        except Exception as e:
+            logger.error(f"Error checking alert key: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+    except Exception as e:
+        logger.error(f"Global error in malware_func: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+    logger.info("Exiting malware_func")
+    return response_element  # Return the potentially updated response_element
 
 async def run_velociraptor_alerts(time_interval):
     logger = additionals.funcs.setup_logger("alerts_interval.log")
@@ -702,10 +888,6 @@ async def run_velociraptor_alerts(time_interval):
         limit {config_data["General"]["IntervalConfigurations"]["AlertsConfiguration"]["AlertResultPerArtifactLimit"]}
         }})
         """
-                logger.info(
-                    "query query query queryqueryquery query query queryquery query query query query query query query query : "
-                    + query
-                )
                 response = await async_run_generic_vql(query, logger)
                 logger.info("Has response, response length:" + str(len(response)))
                 # Add the new structure
@@ -714,7 +896,7 @@ async def run_velociraptor_alerts(time_interval):
 
                 for response_element in response:
                     logger.info(
-                        "Has response, response_element"
+                        "Has response,response_element:\n"
                         + str(
                             response_element["Artifact"]
                             == "Custom.Windows.Detection.Usn.malwareTest"
@@ -723,178 +905,13 @@ async def run_velociraptor_alerts(time_interval):
                             in uniqueListAlert
                         )
                     )
-                    if (
-                        response_element["Artifact"]
-                        == "Custom.Windows.Detection.Usn.malwareTest"
-                    ):
-                        if (
-                            not str(response_element["Filename"])
-                            + str(response_element["Timestamp"])
-                            in uniqueListAlert
-                        ):
-                            logger.info("There is a Sus Alert" + str(response_element))
-                            uniqueListAlert.append(
-                                str(response_element["Filename"])
-                                + str(response_element["Timestamp"])
-                            )
-                            withBackSlashRight = response_element["OSPath"].replace(
-                                "\\", "\\\\\\\\"
-                            )
-                            logger.info(
-                                "withBackSlashRight withBackSlashRight withBackSlashRight OSPath : "
-                                + withBackSlashRight
-                            )
-                            AlertQueryTime = f"""  
-                                                LET collection <= collect_client(
-                                                    client_id='{response_element["ClientId"]}',
-                                                    artifacts='Windows.NTFS.MFT', env=dict(PathRegex='{withBackSlashRight}'))
-                                                LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
-                                                            WHERE FlowId = collection.flow_id
-                                                            LIMIT 1
-                                                SELECT FileName,Created0x10,Created0x30,LastModified0x10,LastModified0x30,LastRecordChange0x10,LastRecordChange0x30,LastAccess0x10,LastAccess0x30 FROM source(
-                                                                client_id=collection.request.client_id,
-                                                                flow_id=collection.flow_id,
-                                                                artifact='Windows.NTFS.MFT')
-
-
-                                                """
-                            logger.info(
-                                "AlertQueryTime AlertQueryTime AlertQueryTime AlertQueryTime : "
-                                + AlertQueryTime
-                            )
-                            responseAlert = await async_run_generic_vql(
-                                AlertQueryTime, logger
-                            )
-                            logger.info("Response element loop! " + str(responseAlert))
-                            if len(responseAlert) > 0:
-                                for responseAlert_Element in responseAlert:
-                                    logger.info("Enter responseAlert_Element list ")
-                                    if (
-                                        (
-                                            responseAlert_Element["Created0x10"]
-                                            != responseAlert_Element["Created0x30"]
-                                        )
-                                        or (
-                                            responseAlert_Element["LastModified0x10"]
-                                            != responseAlert_Element["LastModified0x30"]
-                                        )
-                                        or (
-                                            responseAlert_Element[
-                                                "LastRecordChange0x10"
-                                            ]
-                                            != responseAlert_Element[
-                                                "LastRecordChange0x30"
-                                            ]
-                                        )
-                                        or (
-                                            responseAlert_Element["LastAccess0x10"]
-                                            != responseAlert_Element["LastAccess0x30"]
-                                        )
-                                    ):
-
-                                        logger.info(
-                                            f"Enter Problem and Mismatch OF timestamp on file :  {responseAlert_Element['FileName']}"
-                                        )
-                                        # run this artifact Windows.Forensics.Usn
-                                        timeOfFileAlert = response_element['Timestamp']
-                                        timeBackAlert = adjust_datetime(
-                                            timeOfFileAlert,
-                                            config_data["General"][
-                                                "IntervalConfigurations"
-                                            ]["AlertsConfiguration"][
-                                                "SuspiciousFileSecondsCheck"
-                                            ],
-                                            logger,
-                                            "subtract",
-                                        )
-                                        timeAheadAlert = adjust_datetime(
-                                            timeOfFileAlert,
-                                            config_data["General"][
-                                                "IntervalConfigurations"
-                                            ]["AlertsConfiguration"][
-                                                "SuspiciousFileSecondsCheck"
-                                            ],
-                                            logger,
-                                            "add",
-                                        )
-
-                                        SusFilesQuery = f"""  
-                                                            LET collection <= collect_client(
-                                                                client_id='{response_element["ClientId"]}',
-                                                                artifacts='Windows.Forensics.Usn', env=dict(DateAfter='{timeBackAlert}',DateBefore='{timeAheadAlert}'))
-                                                            LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
-                                                                        WHERE FlowId = collection.flow_id
-                                                                        LIMIT 1
-                                                            SELECT * FROM source(
-                                                                            client_id=collection.request.client_id,
-                                                                            flow_id=collection.flow_id,
-                                                                            artifact='Windows.Forensics.Usn')
-
-
-                                                            """
-                                        logger.info(
-                                            f"This is the SusFilesQuery : {SusFilesQuery}"
-                                        )
-                                        SusFilesAlert = await async_run_generic_vql(SusFilesQuery,logger)
-                                        logger.info(f"This is the results : {str(SusFilesAlert)}")
-                                        if len(SusFilesAlert) >= 10:
-                                            logger.info(f"all sus files : {', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert)}")
-                                            response_element.update(
-                                                {
-                                                    "Artifact": "Python.Suspicious.File.Found",
-                                                    "AlertID": id_generator(),
-                                                    "ClientName": client_name,
-                                                    "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
-                                                    "UserInput": {
-                                                        "UserId": "",
-                                                        "Status": "New",
-                                                        "ChangedAt": "",
-                                                    },
-                                                }
-                                            )
-                                            filteredResponse.append(response_element)   
-                                        else:
-                                            logger.info(f"Not enough files changed ")
-                                            response_element.update(
-                                                {
-                                                    "Artifact": "Python.Suspicious.File.Found.nothing.Happened",
-                                                    "AlertID": id_generator(),
-                                                    "ClientName": client_name,
-                                                    "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
-                                                    "UserInput": {
-                                                        "UserId": "",
-                                                        "Status": "New",
-                                                        "ChangedAt": "",
-                                                    },
-                                                }
-                                            )
-                                            filteredResponse.append(response_element) 
-                                    else:
-                                        logger.info(
-                                            f"No Problem OF timestamp on file : {responseAlert_Element['FileName']}"
-                                        )
-                            else:
-                                logger.info(
-                                    "The File The Alert Was About Was not found create alert about it: "
-                                    + response_element["OSPath"]
-                                )
-                                response_element.update(
-                                    {
-                                        "Artifact": "Python.Suspicious.File.Dont.Exist",
-                                        "AlertID": id_generator(),
-                                        "ClientName": client_name,
-                                        "UserInput": {
-                                            "UserId": "",
-                                            "Status": "New",
-                                            "ChangedAt": "",
-                                        },
-                                    }
-                                )
-                                filteredResponse.append(response_element)
-
-                        else:
-                            logger.info("The Alert Already Exists And has been checked")
-
+                    if (response_element["Artifact"]== "Custom.Windows.Detection.Usn.malwareTest" and client_id == "C.8960ff4456d31ff7"):
+                        #Remove the client id from the if
+                        logger.info("Client id:" + client_id)
+                        logger.info("Client name:" + client_name)
+                        logger.info("Get into malware_function")
+                        response_element = await malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger)
+                        logger.info("Get out of malware_function")
                     else:
                         response_element.update(
                             {
@@ -917,6 +934,240 @@ async def run_velociraptor_alerts(time_interval):
             logger.error(f"Failed in daily task!\nError Message: {str(e)}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
         await asyncio.sleep(time_interval)
+        
+# async def run_velociraptor_alerts(time_interval):
+#     logger = additionals.funcs.setup_logger("alerts_interval.log")
+#     logger.info("Entered alerts function!")
+#     while True:
+#         try:
+#             logger.info("Start alerts loop!")
+#             env_dict = additionals.funcs.read_env_file(logger)
+#             connection = await async_setup_mysql_connection(env_dict, logger)
+#             logger.info("Loading config file!")
+#             config_data = json.loads(
+#                 (
+#                     await async_execute_query(
+#                         connection, "SELECT config FROM configjson LIMIT 1", logger
+#                     )
+#                 )[0][0]
+#             )
+#             logger.info("Loading clients dictionary!")
+#             clients_dict = modules.Velociraptor.VelociraptorScript.get_clients(logger)
+#             logger.info("Clients dictionary:" + str(clients_dict))
+#             previous_collection, previous_timestamp = await load_alerts_if_exists(
+#                 logger
+#             )
+#             collection_data = []
+#             alerts_with_show_false = '","'.join(
+#                 [
+#                     alert
+#                     for alert, details in config_data["General"][
+#                         "AlertDictionary"
+#                     ].items()
+#                     if not details.get("Log", True)
+#                 ]
+#             )
+
+#             for client_name, client_id in clients_dict.items():
+#                 logger.info("Getting alerts from: " + str(client_name))
+#                 query = f"""
+#         LET x <= get_client_monitoring().artifacts 
+#         SELECT * FROM foreach(row=x.artifacts,query={{
+#         SELECT _value AS Artifact, *
+#         FROM monitoring(artifact=_value, client_id="{client_id}") WHERE _ts > {previous_timestamp} 
+#         and not Artifact in ("Example.Alert.To.Not.Run","{alerts_with_show_false}")
+#         ORDER BY _ts DESC 
+#         limit {config_data["General"]["IntervalConfigurations"]["AlertsConfiguration"]["AlertResultPerArtifactLimit"]}
+#         }})
+#         """
+#                 logger.info(
+#                     "query query query queryqueryquery query query queryquery query query query query query query query query : "
+#                     + query
+#                 )
+#                 response = await async_run_generic_vql(query, logger)
+#                 logger.info("Has response, response length:" + str(len(response)))
+#                 # Add the new structure
+#                 uniqueListAlert = []
+#                 filteredResponse = []
+
+#                 for response_element in response:
+#                     logger.info(
+#                         "Has response, response_element"
+#                         + str(
+#                             response_element["Artifact"]
+#                             == "Custom.Windows.Detection.Usn.malwareTest"
+#                             and not str(response_element["Filename"])
+#                             + str(response_element["Timestamp"])
+#                             in uniqueListAlert
+#                         )
+#                     )
+#                     if (response_element["Artifact"]== "Custom.Windows.Detection.Usn.malwareTest"):
+#                         if (not str(response_element["Filename"])+ str(response_element["Timestamp"])in uniqueListAlert):
+#                             logger.info("There is a Sus Alert" + str(response_element))
+#                             uniqueListAlert.append(
+#                                 str(response_element["Filename"])
+#                                 + str(response_element["Timestamp"])
+#                             )
+#                             withBackSlashRight = response_element["OSPath"].replace("\\", "\\\\\\\\")
+#                             logger.info(
+#                                 "withBackSlashRight withBackSlashRight withBackSlashRight OSPath : "
+#                                 + withBackSlashRight)
+#                             AlertQueryTime = f"""  
+#                                                 LET collection <= collect_client(
+#                                                     client_id='{response_element["ClientId"]}',
+#                                                     artifacts='Windows.NTFS.MFT', env=dict(PathRegex='{withBackSlashRight}'))
+#                                                 LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+#                                                             WHERE FlowId = collection.flow_id
+#                                                             LIMIT 1
+#                                                 SELECT FileName,Created0x10,Created0x30,LastModified0x10,LastModified0x30,LastRecordChange0x10,LastRecordChange0x30,LastAccess0x10,LastAccess0x30 FROM source(
+#                                                                 client_id=collection.request.client_id,
+#                                                                 flow_id=collection.flow_id,
+#                                                                 artifact='Windows.NTFS.MFT')
+
+
+#                                                 """
+#                             logger.info(
+#                                 "AlertQueryTime AlertQueryTime AlertQueryTime AlertQueryTime : "
+#                                 + AlertQueryTime
+#                             )
+#                             responseAlert = await async_run_generic_vql(
+#                                 AlertQueryTime, logger
+#                             )
+#                             logger.info("Response element loop! " + str(responseAlert))
+#                             if len(responseAlert) > 0:
+#                                 for responseAlert_Element in responseAlert:
+#                                     logger.info("Enter responseAlert_Element list ")
+#                                     if (
+#                                         (responseAlert_Element["Created0x10"]!= responseAlert_Element["Created0x30"])
+#                                         or (responseAlert_Element["LastModified0x10"]!= responseAlert_Element["LastModified0x30"])
+#                                         or (responseAlert_Element["LastRecordChange0x10"]!= responseAlert_Element["LastRecordChange0x30"])
+#                                         or (responseAlert_Element["LastAccess0x10"]!= responseAlert_Element["LastAccess0x30"])):
+
+#                                         logger.info(
+#                                             f"Enter Problem and Mismatch OF timestamp on file :  {responseAlert_Element['FileName']}"
+#                                         )
+#                                         # run this artifact Windows.Forensics.Usn
+#                                         timeOfFileAlert = response_element['Timestamp']
+#                                         timeBackAlert = adjust_datetime(
+#                                             timeOfFileAlert,
+#                                             config_data["General"][
+#                                                 "IntervalConfigurations"
+#                                             ]["AlertsConfiguration"][
+#                                                 "SuspiciousFileSecondsCheck"
+#                                             ],
+#                                             logger,
+#                                             "subtract",
+#                                         )
+#                                         timeAheadAlert = adjust_datetime(
+#                                             timeOfFileAlert,
+#                                             config_data["General"][
+#                                                 "IntervalConfigurations"
+#                                             ]["AlertsConfiguration"][
+#                                                 "SuspiciousFileSecondsCheck"
+#                                             ],
+#                                             logger,
+#                                             "add",
+#                                         )
+
+#                                         SusFilesQuery = f"""  
+#                                                             LET collection <= collect_client(
+#                                                                 client_id='{response_element["ClientId"]}',
+#                                                                 artifacts='Windows.Forensics.Usn', env=dict(DateAfter='{timeBackAlert}',DateBefore='{timeAheadAlert}'))
+#                                                             LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+#                                                                         WHERE FlowId = collection.flow_id
+#                                                                         LIMIT 1
+#                                                             SELECT * FROM source(
+#                                                                             client_id=collection.request.client_id,
+#                                                                             flow_id=collection.flow_id,
+#                                                                             artifact='Windows.Forensics.Usn')
+
+
+#                                                             """
+#                                         logger.info(
+#                                             f"This is the SusFilesQuery : {SusFilesQuery}"
+#                                         )
+#                                         SusFilesAlert = await async_run_generic_vql(SusFilesQuery,logger)
+#                                         logger.info(f"This is the results : {str(SusFilesAlert)}")
+#                                         if len(SusFilesAlert) >= 10:
+#                                             logger.info(f"all sus files : {', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert)}")
+#                                             response_element.update(
+#                                                 {
+#                                                     "Artifact": "Python.Suspicious.File.Found",
+#                                                     "AlertID": id_generator(),
+#                                                     "ClientName": client_name,
+#                                                     "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
+#                                                     "UserInput": {
+#                                                         "UserId": "",
+#                                                         "Status": "New",
+#                                                         "ChangedAt": "",
+#                                                     },
+#                                                 }
+#                                             )
+#                                             filteredResponse.append(response_element)   
+#                                         else:
+#                                             logger.info(f"Not enough files changed ")
+#                                             response_element.update(
+#                                                 {
+#                                                     "Artifact": "Python.Suspicious.File.Found.nothing.Happened",
+#                                                     "AlertID": id_generator(),
+#                                                     "ClientName": client_name,
+#                                                     "SuspiciousFileList":', '.join(SusFileRow['Filename'] for SusFileRow in SusFilesAlert),
+#                                                     "UserInput": {
+#                                                         "UserId": "",
+#                                                         "Status": "New",
+#                                                         "ChangedAt": "",
+#                                                     },
+#                                                 }
+#                                             )
+#                                             filteredResponse.append(response_element) 
+#                                     else:
+#                                         logger.info(
+#                                             f"No Problem OF timestamp on file : {responseAlert_Element['FileName']}"
+#                                         )
+#                             else:
+#                                 logger.info(
+#                                     "The File The Alert Was About Was not found create alert about it: "
+#                                     + response_element["OSPath"]
+#                                 )
+#                                 response_element.update(
+#                                     {
+#                                         "Artifact": "Python.Suspicious.File.Dont.Exist",
+#                                         "AlertID": id_generator(),
+#                                         "ClientName": client_name,
+#                                         "UserInput": {
+#                                             "UserId": "",
+#                                             "Status": "New",
+#                                             "ChangedAt": "",
+#                                         },
+#                                     }
+#                                 )
+#                                 filteredResponse.append(response_element)
+
+#                         else:
+#                             logger.info("The Alert Already Exists And has been checked")
+
+#                     else:
+#                         response_element.update(
+#                             {
+#                                 "AlertID": id_generator(),
+#                                 "ClientName": client_name,
+#                                 "UserInput": {
+#                                     "UserId": "",
+#                                     "Status": "New",
+#                                     "ChangedAt": "",
+#                                 },
+#                             }
+#                         )
+#                         filteredResponse.append(response_element)
+#                 logger.info("Adding response!")
+#                 collection_data.append(filteredResponse)
+#             logger.info("Alerts succeeded. Saving alerts.json file!")
+#             await sort_alerts(previous_collection, collection_data, logger)
+#             connection.close()
+#         except Exception as e:
+#             logger.error(f"Failed in daily task!\nError Message: {str(e)}")
+#             logger.error(f"Traceback:\n{traceback.format_exc()}")
+#         await asyncio.sleep(time_interval)
 
 
 async def main():

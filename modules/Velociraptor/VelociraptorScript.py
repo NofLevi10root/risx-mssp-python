@@ -40,7 +40,7 @@ def run_generic_vql(query, logger):
         result = []
 
         for response in stub.Query(request):
-            logger.info("response response response response "+str(response) )
+            logger.info("response:"+str(response) )
 
             if response.Response:
                 try:
@@ -88,7 +88,7 @@ def run_generic_vql_monitor(query, logger):
         result = []
 
         for response in stub.Query(request):
-            logger.info("response response response response "+str(response) )
+            logger.info("respone: "+str(response) )
 
             if response.Response:
                 try:
