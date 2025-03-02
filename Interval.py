@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 # Wrappers for async:
 # Wrapper for setup_mysql_connection
@@ -656,6 +657,22 @@ async def sort_alerts(previous_collection_data, collection_data, logger):
         logger.error(f"An error occurred during processing: {e}")
         return None, None
 
+def create_golang_regex(data):
+    """
+    Filters out entries where 'Filename' contains '$' and generates a Golang regex pattern
+    matching all remaining 'OSPath' values with proper escaping.
+
+    :param data: List of dictionaries containing file metadata
+    :return: Golang regex pattern string
+    """
+    # Filter out entries with '$' in the filename
+    filtered_os_paths = [entry["OSPath"] for entry in data if "$" not in entry["Filename"]]
+
+    # Correct escaping: replace single '\' with '\\\' and ensure correct regex structure
+    regex_pattern = "|".join(re.escape(path).replace("\\\\", "\\\\\\\\") for path in filtered_os_paths)
+
+    return regex_pattern
+
 async def malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger):
     try:
         logger.info("Entering malware_func")
@@ -736,14 +753,191 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                         usn_results = await async_run_generic_vql(usn_query, logger)
                         logger.info(f"USN query returned {len(usn_results)} files.")
                         logger.info(f"USN values:" + str(usn_results))
+                        path_regex = create_golang_regex(usn_results)
+                        logger.info("Path regex:" + str(path_regex))
+                        suspicious_files = []
+                        # For each text/CSV file found, check MFT fors timestamp discrepancies
+                        try:  
+                            # Query to check timestamp correlation using MFT
+                            mft_query = f"""  
+                                LET collection <= collect_client(
+                                    client_id='{client_id}',
+                                    artifacts='Windows.NTFS.MFT', 
+                                    env=dict(PathRegex='{path_regex}'))
+                                LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                                    WHERE FlowId = collection.flow_id
+                                    LIMIT 1
+                                SELECT OSPath,FileName,Created0x10,Created0x30,LastModified0x10,LastModified0x30,
+                                        LastRecordChange0x10,LastRecordChange0x30,LastAccess0x10,LastAccess0x30 
+                                FROM source(
+                                    client_id=collection.request.client_id,
+                                    flow_id=collection.flow_id,
+                                    artifact='Windows.NTFS.MFT')
+                            """
+                            
+                            
+                            try:
+                                mft_response = await async_run_generic_vql(mft_query, logger)
+                                logger.info("mft response:")
+                                # Check for timestamp discrepancies
+                                for file_entry in mft_response:
+                                    try:
+                                        logger.info("file entry:" + str(file_entry.get('OSPath', 'Unknown')))
+                                        if (file_entry.get("Created0x10") != file_entry.get("Created0x30") or
+                                            file_entry.get("LastModified0x10") != file_entry.get("LastModified0x30") or
+                                            file_entry.get("LastRecordChange0x10") != file_entry.get("LastRecordChange0x30") or
+                                            file_entry.get("LastAccess0x10") != file_entry.get("LastAccess0x30")):
+                                            
+                                            logger.info(f"Timestamp discrepancy detected in file: {file_entry.get('OSPath', 'Unknown')}")
+                                            suspicious_files.append(file_entry.get('OSPath', 'Unknown'))
+                                            break  # Found a discrepancy in this file, move to next file
+                                    except Exception as e:
+                                        logger.error(f"Error checking timestamps for file entry: {str(e)}")
+                            except Exception as e:
+                                logger.error(f"Error in MFT query: {str(e)}")
+                        except Exception as e:
+                            logger.error(f"Error processing file data: {str(e)}")
                         
+                        # Create alert based on findings
+                        try:
+                            if suspicious_files:
+                                suspicious_files_str = ', '.join(suspicious_files)
+                                logger.info(f"Found {len(suspicious_files)} files with timestamp discrepancies: {suspicious_files_str}")
+                                
+                                response_element.update({
+                                    "Artifact": "Python.Suspicious.File.Found",
+                                    "AlertID": id_generator(),
+                                    "ClientName": client_name,
+                                    "SuspiciousFileList": suspicious_files_str,
+                                    "UserInput": {
+                                        "UserId": "",
+                                        "Status": "New",
+                                        "ChangedAt": "",
+                                    }
+                                })
+                                filteredResponse.append(response_element)
+                            else:
+                                logger.info("No files with timestamp discrepancies found")
+                                response_element.update({
+                                    "Artifact": "Python.Suspicious.File.No.Discrepancies",
+                                    "AlertID": id_generator(),
+                                    "ClientName": client_name,
+                                    "UserInput": {
+                                        "UserId": "",
+                                        "Status": "New", 
+                                        "ChangedAt": "",
+                                    }
+                                })
+                                filteredResponse.append(response_element)
+                        except Exception as e:
+                            logger.error(f"Error creating alert: {str(e)}")
+                    except Exception as e:
+                        logger.error(f"Error in USN query: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error calculating time range: {str(e)}")
+            else:
+                logger.info("This alert has already been processed")
+        except Exception as e:
+            logger.error(f"Error checking alert key: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+    except Exception as e:
+        logger.error(f"Global error in malware_func: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+    logger.info("Exiting malware_func")
+    return response_element  # Return the potentially updated response_element
+
+async def old_malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger):
+    try:
+        logger.info("Entering malware_func")
+        
+        logger.info(f"response_element keys: {list(response_element.keys()) if isinstance(response_element, dict) else 'Not a dictionary'}")
+        logger.info(f"config_data keys: {list(config_data.keys()) if isinstance(config_data, dict) else 'Not a dictionary'}")
+        
+        # Check if we've already processed this alert
+        try:
+            logger.info("About to access Filename and Timestamp")
+            filename = response_element.get('Filename')
+            timestamp = response_element.get('Timestamp')
+            
+            if filename is None or timestamp is None:
+                logger.error(f"Missing required keys in response_element - Filename: {filename is not None}, Timestamp: {timestamp is not None}")
+                return response_element
+                
+            alert_key = f"{filename}{timestamp}"
+            logger.info(f"Generated alert_key: {alert_key}")
+            
+            if alert_key not in uniqueListAlert:
+                logger.info(f"Suspicious Alert detected: {response_element}")
+                uniqueListAlert.append(alert_key)
+                
+                try:
+                    # Get time range for the USN check based on when the suspicious file was detected
+                    alert_time = timestamp
+                    logger.info(f"Using alert_time: {alert_time}")
+                    
+                    # Check config data structure
+                    seconds_check_path = config_data.get("General", {}).get("IntervalConfigurations", {}).get("AlertsConfiguration", {}).get("SuspiciousFileSecondsCheck")
+                    logger.info(f"SuspiciousFileSecondsCheck value: {seconds_check_path}")
+                    
+                    if seconds_check_path is None:
+                        logger.error("Missing SuspiciousFileSecondsCheck configuration")
+                        return response_element
+                    
+                    time_back = adjust_datetime(
+                        alert_time,
+                        seconds_check_path,
+                        logger,
+                        "subtract"
+                    )
+                    time_ahead = adjust_datetime(
+                        alert_time,
+                        seconds_check_path,
+                        logger,
+                        "add"
+                    )
+                    
+                    logger.info(f"Time range calculated - back: {time_back}, ahead: {time_ahead}")
+                    
+                    # Check for client_id
+                    client_id = response_element.get("ClientId")
+                    if not client_id:
+                        logger.error("Missing ClientId in response_element")
+                        return response_element
+                        
+                    # Query to find all changed files during this time period using Windows.Forensics.Usn
+                    usn_query = f"""  
+                        LET collection <= collect_client(
+                            client_id='{client_id}',
+                            artifacts='Windows.Forensics.Usn', 
+                            env=dict(DateAfter='{time_back}',DateBefore='{time_ahead}',FileNameRegex='.*(txt|csv)$'))
+                        LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+                            WHERE FlowId = collection.flow_id
+                            LIMIT 1
+                        SELECT * FROM source(
+                            client_id=collection.request.client_id,
+                            flow_id=collection.flow_id,
+                            artifact='Windows.Forensics.Usn')
+                    """
+                    # to add this to after test:
+                    #
+                    logger.info(f"Running USN query to find changed text/CSV files: {usn_query}")
+                    
+                    try:
+                        usn_results = await async_run_generic_vql(usn_query, logger)
+                        logger.info(f"USN query returned {len(usn_results)} files.")
+                        logger.info(f"USN values:" + str(usn_results))
+                        path_regex = create_golang_regex(usn_results)
+                        logger.info("Path regex:" + str(path_regex))
                         suspicious_files = []
                         # For each text/CSV file found, check MFT fors timestamp discrepancies
                         for file_data in usn_results:
                             try:
                                 # Check if OSPath or FullPath is available in file_data
                                 file_path = file_data.get("FullPath", file_data.get("OSPath", ""))
-                                if not file_path:
+                                if not file_path or "recycle" in file_path.lower():
                                     logger.warning(f"No path found for file: {file_data.get('Filename', 'Unknown file')}")
                                     continue
                                 
@@ -756,7 +950,7 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                                     LET collection <= collect_client(
                                         client_id='{client_id}',
                                         artifacts='Windows.NTFS.MFT', 
-                                        env=dict(PathRegex='{escaped_path}'))
+                                        env=dict(PathRegex='{path_regex}'))
                                     LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
                                         WHERE FlowId = collection.flow_id
                                         LIMIT 1
