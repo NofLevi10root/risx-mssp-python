@@ -657,21 +657,24 @@ async def sort_alerts(previous_collection_data, collection_data, logger):
         logger.error(f"An error occurred during processing: {e}")
         return None, None
 
+import re
+
 def create_golang_regex(data):
     """
     Filters out entries where 'Filename' contains '$' and generates a Golang regex pattern
-    matching all remaining 'OSPath' values with proper escaping.
+    matching all unique 'OSPath' values with proper escaping.
 
     :param data: List of dictionaries containing file metadata
     :return: Golang regex pattern string
     """
-    # Filter out entries with '$' in the filename
-    filtered_os_paths = [entry["OSPath"] for entry in data if "$" not in entry["Filename"]]
+    # Use a set to store unique paths
+    unique_os_paths = {entry["OSPath"] for entry in data if "$" not in entry["Filename"]}
 
     # Correct escaping: replace single '\' with '\\\' and ensure correct regex structure
-    regex_pattern = "|".join(re.escape(path).replace("\\\\", "\\\\\\\\") for path in filtered_os_paths)
+    regex_pattern = "|".join(re.escape(path).replace("\\\\", "\\\\\\\\") for path in unique_os_paths)
 
     return regex_pattern
+
 
 async def malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger):
     try:
@@ -685,8 +688,8 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
             logger.info("About to access Filename and Timestamp")
             filename = response_element.get('Filename')
             timestamp = response_element.get('Timestamp')
-            
-            if filename is None or timestamp is None:
+            response_reason = response_element.get('Reason')
+            if filename is None or timestamp is None or "FILE_CREATE" != response_reason[0]:
                 logger.error(f"Missing required keys in response_element - Filename: {filename is not None}, Timestamp: {timestamp is not None}")
                 return response_element
                 
@@ -755,7 +758,6 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                         logger.info(f"USN values:" + str(usn_results))
                         path_regex = create_golang_regex(usn_results)
                         logger.info("Path regex:" + str(path_regex))
-                        suspicious_files = []
                         # For each text/CSV file found, check MFT fors timestamp discrepancies
                         try:  
                             # Query to check timestamp correlation using MFT
@@ -782,15 +784,46 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                                 # Check for timestamp discrepancies
                                 for file_entry in mft_response:
                                     try:
-                                        logger.info("file entry:" + str(file_entry.get('OSPath', 'Unknown')))
-                                        if (file_entry.get("Created0x10") != file_entry.get("Created0x30") or
-                                            file_entry.get("LastModified0x10") != file_entry.get("LastModified0x30") or
-                                            file_entry.get("LastRecordChange0x10") != file_entry.get("LastRecordChange0x30") or
-                                            file_entry.get("LastAccess0x10") != file_entry.get("LastAccess0x30")):
-                                            
+                                        logger.info("File entry type:" + str(type(file_entry)))
+                                        logger.info("file entry:" + str(file_entry))
+                                        
+                                        timestamp_diffs = []
+                                        
+                                        # Check Created timestamps
+                                        if file_entry.get("Created0x10") != file_entry.get("Created0x30"):
+                                            timestamp_diffs.append("Created")
+                                        
+                                        # Check LastModified timestamps
+                                        if file_entry.get("LastModified0x10") != file_entry.get("LastModified0x30"):
+                                            timestamp_diffs.append("LastModified")
+                                        
+                                        # Check LastRecordChange timestamps
+                                        if file_entry.get("LastRecordChange0x10") != file_entry.get("LastRecordChange0x30"):
+                                            timestamp_diffs.append("LastRecordChange")
+                                        
+                                        # Check LastAccess timestamps
+                                        if file_entry.get("LastAccess0x10") != file_entry.get("LastAccess0x30"):
+                                            timestamp_diffs.append("LastAccess")
+                                        
+                                        # If we found any timestamp discrepancies
+                                        if timestamp_diffs:
                                             logger.info(f"Timestamp discrepancy detected in file: {file_entry.get('OSPath', 'Unknown')}")
-                                            suspicious_files.append(file_entry.get('OSPath', 'Unknown'))
-                                            break  # Found a discrepancy in this file, move to next file
+                                            suspicious_file_path = file_entry.get('OSPath', 'Unknown')
+                                            logger.info(f"Found {len(suspicious_file_path)} files with timestamp discrepancies: {suspicious_file_path}")
+                                            
+                                            response_element.update({
+                                                "Artifact": "Python.Suspicious.File.Found",
+                                                "AlertID": id_generator(),
+                                                "ClientName": client_name,
+                                                "SuspiciousFilePath": suspicious_file_path,
+                                                "TimestampDiffs": timestamp_diffs,
+                                                "UserInput": {
+                                                    "UserId": "",
+                                                    "Status": "New",
+                                                    "ChangedAt": "",
+                                                }
+                                            })
+                                            filteredResponse.append(response_element)
                                     except Exception as e:
                                         logger.error(f"Error checking timestamps for file entry: {str(e)}")
                             except Exception as e:
@@ -798,39 +831,28 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                         except Exception as e:
                             logger.error(f"Error processing file data: {str(e)}")
                         
-                        # Create alert based on findings
-                        try:
-                            if suspicious_files:
-                                suspicious_files_str = ', '.join(suspicious_files)
-                                logger.info(f"Found {len(suspicious_files)} files with timestamp discrepancies: {suspicious_files_str}")
-                                
-                                response_element.update({
-                                    "Artifact": "Python.Suspicious.File.Found",
-                                    "AlertID": id_generator(),
-                                    "ClientName": client_name,
-                                    "SuspiciousFileList": suspicious_files_str,
-                                    "UserInput": {
-                                        "UserId": "",
-                                        "Status": "New",
-                                        "ChangedAt": "",
-                                    }
-                                })
-                                filteredResponse.append(response_element)
-                            else:
-                                logger.info("No files with timestamp discrepancies found")
-                                response_element.update({
-                                    "Artifact": "Python.Suspicious.File.No.Discrepancies",
-                                    "AlertID": id_generator(),
-                                    "ClientName": client_name,
-                                    "UserInput": {
-                                        "UserId": "",
-                                        "Status": "New", 
-                                        "ChangedAt": "",
-                                    }
-                                })
-                                filteredResponse.append(response_element)
-                        except Exception as e:
-                            logger.error(f"Error creating alert: {str(e)}")
+
+                        # Remove the pf file if wanted
+                        # temp bool for the removal
+                        removePF = True
+                        if(removePF):
+                            delete_file_query = f"""  
+    LET delete_cmd = 'cmd /c del "{response_element.get('OSPath')}"'
+    
+    LET collection <= collect_client(
+        client_id='{client_id}',
+        artifacts='Artifact.Generic.OSCommand', 
+        env=dict(Command=delete_cmd))
+    
+    LET _ <= SELECT * FROM watch_monitoring(artifact='System.Flow.Completion')
+        WHERE FlowId = collection.flow_id
+        LIMIT 1
+    
+    SELECT * FROM source(
+        client_id=collection.request.client_id,
+        flow_id=collection.flow_id,
+        artifact='Artifact.Generic.OSCommand')
+"""
                     except Exception as e:
                         logger.error(f"Error in USN query: {str(e)}")
                 except Exception as e:
