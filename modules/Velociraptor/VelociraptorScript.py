@@ -18,8 +18,77 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Modify SSL context globally to allow unverified HTTPS connections
 ssl._create_default_https_context = ssl._create_unverified_context
+import json
+import time
+from datetime import datetime, timedelta
+
+import json
+import time
+import pandas as pd
+from datetime import datetime
+
+def get_online_clients(logger):
+    """
+    Retrieves only online clients from Velociraptor.
+
+    :param logger: Logger for logging messages.
+    :return: Dictionary {hostname: client_id} of online clients.
+    """
+    logger.info("Retrieving only online clients.")
+
+    # VQL query to fetch all clients (filtering is done in Python)
+    vql_query = "`SELECT client_id, os_info.hostname, last_seen_at FROM clients()`"
+
+    try:
+        # Establish connection
+        channel = setup_connection(logger)
+        if not channel:
+            logger.error("Failed to establish a connection to Velociraptor API.")
+            return {}
+
+        logger.info("Connected to Velociraptor API via gRPC.")
+
+        # Execute query through `server_query`
+        org_id = "OCHL0"
+        json_data_string = server_query(channel, org_id, vql_query, logger)
+
+        if not json_data_string:
+            logger.warning("No online clients found.")
+            return {}
+
+        # Parse response
+        data = json.loads(json_data_string)
+        logger.info(f"Raw response from Velociraptor: {json.dumps(data, indent=2)}")
+
+        # Get current time in seconds
+        current_time = int(time.time())
+
+        # Convert last_seen_at and filter online clients
+        online_clients = {}
+        for entry in data:
+            if "last_seen_at" in entry and entry["last_seen_at"]:
+                last_seen_at = entry["last_seen_at"]
+
+                # Convert last_seen_at to seconds if it's in nanoseconds/microseconds
+                if last_seen_at > 10**12:  # Nanoseconds
+                    last_seen_at = last_seen_at // 10**9
+                elif last_seen_at > 10**9:  # Microseconds
+                    last_seen_at = last_seen_at // 10**6
+
+                # Check if the client was seen in the last 5 minutes (300 seconds)
+                if current_time - last_seen_at <= 300:
+                    online_clients[entry["os_info"]["hostname"]] = entry["client_id"]
+
+        logger.info(f"Filtered Online clients: {online_clients}")
+        return online_clients
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve online clients. Error: {e}")
+        return {}
 
 
+
+    
 def run_generic_vql(query, logger):
     try:
         logger.info("Run generic vql!")
@@ -233,7 +302,7 @@ def format_arguments_obj(arguments,logger):
                 
     return formatted_arguments
 
-def get_clients(logger):
+def get_clients(logger, onlineFlag):
     channel = setup_connection(logger)
     stub = api_pb2_grpc.APIStub(channel)
     query = "SELECT * FROM clients()"
@@ -243,10 +312,16 @@ def get_clients(logger):
     json_data_string = server_query(channel, org_id, query, logger)
     if json_data_string:
         data = json.loads(json_data_string)
-        host_client_id_dict = {
-            entry["os_info"]["hostname"]: entry["client_id"] for entry in data
-        }
-        return host_client_id_dict
+        if not onlineFlag:
+                host_client_id_dict = {
+                    entry["os_info"]["hostname"]: entry["client_id"] for entry in data
+                }
+                return host_client_id_dict
+        else:
+                host_client_id_dict = {
+                    entry["client_id"]: entry["last_seen_at"] for entry in data
+                }
+                return host_client_id_dict
     else:
         logger.error("Failed to get clients.")
         return {}

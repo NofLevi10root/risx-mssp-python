@@ -273,7 +273,7 @@ def start_timesketch(row, general_config, logger):
 
         # Establish a secure channel
         with grpc.secure_channel(velociraptor_config["api_connection_string"], creds, options) as channel:
-            host_client_id_dict = modules.Velociraptor.VelociraptorScript.get_clients(logger)
+            host_client_id_dict = modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
             logger.info("Current host_client_id_dict:" + str(host_client_id_dict))
             logger.info("Running artifact")
             logger.info("TimeSketchPopulation:" + str(row["Population"]))
