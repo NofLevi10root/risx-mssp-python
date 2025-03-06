@@ -675,15 +675,35 @@ def create_golang_regex(data):
     :return: Golang regex pattern string
     """
     # Use a set to store unique paths
-    unique_os_paths = {entry["OSPath"] for entry in data if "$" not in entry["Filename"]}
+    unique_os_paths = {entry["OSPath"] for entry in data if "$" not in entry["Filename"] and "ConsoleHost_history.txt" not in entry["Filename"]}
 
     # Correct escaping: replace single '\' with '\\\' and ensure correct regex structure
     regex_pattern = "|".join(re.escape(path).replace("\\\\", "\\\\\\\\") for path in unique_os_paths)
 
     return regex_pattern
 
+# Function to format timestamps in seconds
+def format_timestamp(timestamp):
+    if timestamp:
+        try:
+            return datetime.strptime(timestamp.split('.')[0][:-1], "%Y-%m-%dT%H:%M:%S").strftime("%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            return timestamp  # Return original if formatting fails
+    return None
 
-async def malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger):
+
+# Function to format timestamps in miliseconds
+"""
+def format_timestamp(timestamp):
+    if timestamp:
+        try:
+            return datetime.strptime(timestamp.split('.')[0][:-1], "%Y-%m-%dT%H:%M:%S").strftime("%d/%m/%Y %H:%M:%S.%f")[:-3]
+        except ValueError:
+            return timestamp  # Return original if formatting fails
+    return None
+"""
+
+async def malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, fqdn, logger):
     try:
         logger.info("Entering malware_func")
         
@@ -695,12 +715,12 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
             logger.info("About to access Filename and Timestamp")
             filename = response_element.get('Filename')
             timestamp = response_element.get('Timestamp')
-            response_reason = response_element.get('Reason')
             if filename is None or timestamp is None:
                 logger.error(f"Missing required keys in response_element - Filename: {filename is not None}, Timestamp: {timestamp is not None}")
                 return response_element
                 
-            alert_key = f"{filename}{timestamp}"
+            alert_timestamp = timestamp.split(".")[0]
+            alert_key = f"{filename}{alert_timestamp}"
             logger.info(f"Generated alert_key: {alert_key}")
             
             if alert_key not in uniqueListAlert:
@@ -760,7 +780,11 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                     logger.info(f"Running USN query to find changed text/CSV files: {usn_query}")
                     
                     try:
+
                         usn_results = await async_run_generic_vql(usn_query, logger)
+                        if(len(usn_results) < 1):
+                            logger.info("No csv/txt detected!")
+                            return
                         logger.info(f"USN query returned {len(usn_results)} files.")
                         logger.info(f"USN values:" + str(usn_results))
                         path_regex = create_golang_regex(usn_results)
@@ -793,27 +817,29 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                                         logger.info("File entry type:" + str(type(file_entry)))
                                         logger.info("file entry:" + str(file_entry))
                                         
+                                        # Dictionary to store timestamp differences
                                         timestamp_diffs = {}
-                                        
-                                        # Check Created timestamps
+
+                                        # Check and format Created timestamps
                                         if file_entry.get("Created0x10") != file_entry.get("Created0x30"):
-                                            timestamp_diffs["Created"] =  f"\nSTANDARD_INFORMATION: {file_entry.get('Created0x10')} \nFILE_NAME: {file_entry.get('Created0x30')}"
+                                            timestamp_diffs["Created ($FN)"] = format_timestamp(file_entry.get("Created0x30"))
+                                            timestamp_diffs["Created ($STD)"] = format_timestamp(file_entry.get("Created0x10"))
 
-                                        
-                                        # Check LastModified timestamps
+                                        # Check and format LastModified timestamps
                                         if file_entry.get("LastModified0x10") != file_entry.get("LastModified0x30"):
-                                            timestamp_diffs["LastModified"] =  f"\nSTANDARD_INFORMATION: {file_entry.get('LastModified0x10')} \nFILE_NAME: {file_entry.get('LastModified0x30')}"
+                                            timestamp_diffs["Last Modified ($FN)"] = format_timestamp(file_entry.get("LastModified0x30"))
+                                            timestamp_diffs["Last Modified ($STD)"] = format_timestamp(file_entry.get("LastModified0x10"))
 
-                                        
-                                        # Check LastRecordChange timestamps
+                                        # Check and format LastRecordChange timestamps
                                         if file_entry.get("LastRecordChange0x10") != file_entry.get("LastRecordChange0x30"):
-                                            timestamp_diffs["LastRecordChange"] =  f"\nSTANDARD_INFORMATION: {file_entry.get('LastRecordChange0x10')} \nFILE_NAME: {file_entry.get('LastRecordChange0x30')}"
+                                            timestamp_diffs["Last Record Change ($FN)"] = format_timestamp(file_entry.get("LastRecordChange0x30"))
+                                            timestamp_diffs["Last Record Change ($STD)"] = format_timestamp(file_entry.get("LastRecordChange0x10"))
 
-                                        
-                                        # Check LastAccess timestamps
+                                        # Check and format LastAccess timestamps
                                         if file_entry.get("LastAccess0x10") != file_entry.get("LastAccess0x30"):
-                                            timestamp_diffs["LastAccess"] =  f"\nSTANDARD_INFORMATION: {file_entry.get('LastAccess0x10')} \nFILE_NAME: {file_entry.get('LastAccess0x30')}"
-                               
+                                            timestamp_diffs["Last Access ($FN)"] = format_timestamp(file_entry.get("LastAccess0x30"))
+                                            timestamp_diffs["Last Access ($STD)"] = format_timestamp(file_entry.get("LastAccess0x10"))
+
                                         # If we found any timestamp discrepancies
                                         if timestamp_diffs:
                                             logger.info(f"Timestamp discrepancy detected in file: {file_entry.get('OSPath', 'Unknown')}")
@@ -823,21 +849,43 @@ async def malware_func(config_data, response_element, uniqueListAlert, client_na
                                                 logger.info(f"file_entry.get sanfloksdjgfpodsjfsxflksdf :{timestamp_diffs}  {file_entry.get('FileName', 'Unknown')} {response_element.get('_ts', 'Unknown')}")
                                             except Exception as e:
                                                 logger.error(f"Error IN MID timestamp_diffs: {str(e)}")
+                                            
+                                            process = response_element.get('Filename', 'Unknown').split("-")[0]
                                             tempObjTime = {
-                                                "_ts":response_element.get('_ts', 'Unknown'),
-                                                "OriginalPf":response_element.get('Filename', 'Unknown'),
-                                                "OriginalPfPath":response_element.get('OSPath', 'Unknown'),
-                                                "Artifact": "Python.Suspicious.File.Found",
                                                 "AlertID": id_generator(),
-                                                "ClientName": client_name,
-                                                "FileName":file_entry.get('FileName', 'Unknown'),
-                                                "SuspiciousFilePath": suspicious_file_path,
+                                                "Artifact": "Python.Suspicious.File.Found", # Not needed but fked up the UI
+                                                "_ts":response_element.get('_ts', 'Unknown'),
+                                                "Process":process,
+                                                "Client FQDN": fqdn,
+                                                "Suspicious File": suspicious_file_path,
                                                 "UserInput": {
                                                     "UserId": "",
                                                     "Status": "New",
                                                     "ChangedAt": "",
                                                 }
                                             }
+
+                                            tempObjTime = {
+                                                **{k: tempObjTime[k] for k in tempObjTime if k != "UserInput"},  # Keep everything except "UserInput"
+                                                **timestamp_diffs,  # Insert timestamp_diffs values here
+                                                "UserInput": tempObjTime["UserInput"]  # Add "UserInput" at the end
+}
+
+                                            """
+                                            tempObjTime = {
+                                                "AlertID": id_generator(),
+                                                "_ts":response_element.get('_ts', 'Unknown'),
+                                                "Process":response_element.get('Filename', 'Unknown'),
+                                                "Artifact": "Python.Suspicious.File.Found",
+                                                "Client Name": client_name,
+                                                "Suspicious File": suspicious_file_path,
+                                                "UserInput": {
+                                                    "UserId": "",
+                                                    "Status": "New",
+                                                    "ChangedAt": "",
+                                                }
+                                            }
+                                            """
                                             tempObjTime.update(timestamp_diffs)
                                             filteredResponse.append(tempObjTime)
                                     except Exception as e:
@@ -949,37 +997,40 @@ async def run_velociraptor_alerts(time_interval):
                             in uniqueListAlert
                         )
                     )
+                    clients = modules.Velociraptor.VelociraptorScript.get_clients(logger, True)
+                    fqdn = clients[client_id][1]
                     if (response_element["Artifact"]== "Custom.Windows.Detection.Usn.malwareTest"):
                         #Remove the client id from the if
                         logger.info("Client id:" + client_id)
                         logger.info("Client name:" + client_name)
                         logger.info("Get into malware_function")
                         #online_clients = await async_get_online_clients(logger)
-                        clients = modules.Velociraptor.VelociraptorScript.get_clients(logger, True)
+                        
 
                         from datetime import datetime, timezone
                         import time
 
                         # Get current UTC time in seconds
                         current_utc_time = datetime.now(timezone.utc).timestamp()
-                        threshold_seconds = 120 # 3 hours
+                        threshold_seconds = 120 # in secs
 
                         logger.info(f"Current UTC Unix Time: {current_utc_time}")
                         logger.info(f"Threshold (last seen after this time is online): {current_utc_time - threshold_seconds}")
 
                         # Debugging: Log timestamps before filtering
+                        """
                         for cid, ts in clients.items():
                             converted_time = float(ts / 1e6)  # Convert microseconds to seconds
                             human_readable = datetime.fromtimestamp(converted_time, tz=timezone.utc).isoformat()
 
                             logger.info(f"Client: {cid} | Raw last_seen_at: {ts} | Converted: {converted_time} | Human Readable: {human_readable}")
                             logger.info(f"Comparison: {converted_time} >= {current_utc_time - threshold_seconds}")
-
+                        """
                         # Apply online filter
                         online_clients = {
-                            cid: datetime.fromtimestamp(float(ts / 1e6), tz=timezone.utc).isoformat()
+                            cid: datetime.fromtimestamp(float(ts[0] / 1e6), tz=timezone.utc).isoformat()
                             for cid, ts in clients.items()
-                            if float(ts / 1e6) >= (current_utc_time - threshold_seconds)
+                            if float(ts[0] / 1e6) >= (current_utc_time - threshold_seconds)
                         }
 
                         logger.info("\n=== Online Clients (Forced UTC, Corrected Microsecond Conversion) ===")
@@ -987,7 +1038,9 @@ async def run_velociraptor_alerts(time_interval):
 
                         if(client_id in online_clients):
                             logger.info("Client is online keeping the progress!")
-                            response_element = await malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, logger)
+                            
+                            logger.info("current fqdn:" + str(fqdn))
+                            response_element = await malware_func(config_data, response_element, uniqueListAlert, client_name, filteredResponse, fqdn, logger)
                         else:
                             logger.info("Client is offline skipping to the next one!")
                         logger.info("Get out of malware_function")
@@ -995,7 +1048,7 @@ async def run_velociraptor_alerts(time_interval):
                         response_element.update(
                             {
                                 "AlertID": id_generator(),
-                                "ClientName": client_name,
+                                "Client FQDN": fqdn,
                                 "UserInput": {
                                     "UserId": "",
                                     "Status": "New",
@@ -1003,7 +1056,8 @@ async def run_velociraptor_alerts(time_interval):
                                 },
                             }
                         )
-                        filteredResponse.append(response_element)
+                        if(response_element):
+                            filteredResponse.append(response_element)
                 logger.info("Adding response!")
                 collection_data.append(filteredResponse)
             logger.info("Alerts succeeded. Saving alerts.json file!")

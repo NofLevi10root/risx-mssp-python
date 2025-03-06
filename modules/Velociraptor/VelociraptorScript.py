@@ -319,7 +319,7 @@ def get_clients(logger, onlineFlag):
                 return host_client_id_dict
         else:
                 host_client_id_dict = {
-                    entry["client_id"]: entry["last_seen_at"] for entry in data
+                    entry["client_id"]: [entry["last_seen_at"], entry["os_info"]["fqdn"]] for entry in data
                 }
                 return host_client_id_dict
     else:
