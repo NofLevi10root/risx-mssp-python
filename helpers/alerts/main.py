@@ -148,7 +148,7 @@ SELECT add_client_monitoring(
 def artifacts_per_client_full(logger):
     all_artifacts, labeled_artifacts = get_list_of_artifacts_state(logger)
     clients_list = get_clients(logger)
-    
+    get_client_event_list(logger)
     # Create empty table
     df = pd.DataFrame(columns=['clientid', 'config', 'fqdn'])
     
@@ -223,6 +223,14 @@ def push_dataframe_to_mysql(df, connection, table_name, logger):
             cursor.close()
         return False
     
+def get_client_event_list(logger):
+        # Construct the VQL query to remove the artifact from monitoring
+    vql_query = f"""select name, parameters from artifact_definitions() where type = 'client_event'"""
+
+    # Run the VQL query
+    results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
+    logger.info("client event list:" + str(results))
+    return results
 if __name__ == "__main__":
     logger = additionals.funcs.setup_logger("alerts_helper.log")
     
@@ -240,4 +248,4 @@ if __name__ == "__main__":
     #add_monitor_artifact(artifact_name, parameters, logger)
     # In test
     #remove_monitor_artifact(artifact_name, logger)
-    artifacts_per_client_full(logger)
+    #artifacts_per_client_full(logger)
