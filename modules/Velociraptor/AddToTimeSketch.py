@@ -188,21 +188,24 @@ def get_command2(config, api, row, host_name, user_name, client_name, logger):
     logger.info("Checking if sketch exists or not [Need timesketch importer connection!]")
     ip = config['ClientData']['API']['Timesketch']["IP"]
     timesketch_importer_path = ""
+    PathToPlaso = ""
     # When the shell is inside a container the user name will always be node else its dev version
     if(user_name == "node"):
         timesketch_importer_path = f"/usr/local/bin/timesketch_importer"
+        PathToPlaso = f"/plaso/{client_name}Artifacts.plaso"
     else:
         timesketch_importer_path = f"/home/{user_name}/.local/bin/timesketch_importer"
+        PathToPlaso = f"/home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/{client_name}Artifacts.plaso"
 
     # Add a check for sketch_id and construct command
     if sketch_id is not None:
         logger.info(f"Sketch with the same name found. Sketchid: {sketch_id}")
         row["UniqueID"] = {"SketchID": sketch_id, "TimelineID": timeline_name}
-        return row, f"{timesketch_importer_path} -u {username} -p {password} --host http://{ip}:5000 --timeline_name {timeline_name} --sketch_id {sketch_id} /plaso/{client_name}Artifacts.plaso --quick"
+        return row, f"{timesketch_importer_path} -u {username} -p {password} --host http://{ip}:5000 --timeline_name {timeline_name} --sketch_id {sketch_id} {PathToPlaso} --quick"
     else:
         logger.info(f"Sketch with the same name not found. Creating new Sketch: {sketch_name}")
         row["UniqueID"] = {"SketchID": sketch_name, "TimelineID": timeline_name}
-        return row, f"{timesketch_importer_path} -u {username} -p {password} --host http://{ip}:5000 --timeline_name {timeline_name} --sketch_name {sketch_name} /plaso/{client_name}Artifacts.plaso --quick"
+        return row, f"{timesketch_importer_path} -u {username} -p {password} --host http://{ip}:5000 --timeline_name {timeline_name} --sketch_name {sketch_name} {PathToPlaso} --quick"
 
 
 def get_sketch_id(api, sketch_name, logger):
@@ -304,6 +307,7 @@ def start_timesketch(row, general_config, logger):
                         ram = additionals.funcs.closest_memory_percentage(int(row['Arguments']['MemoryThrottling'])) + "g"
                         logger.info("Number of CPUs:" + cpus)
                         logger.info("Number of Memory:" + ram)
+ 
                         command1 = f"sudo docker run -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data -v /home/tenroot/setup_platform/workdir/velociraptor/velociraptor:/velociraptor --cpus='{cpus}' --memory='{ram}' log2timeline/plaso log2timeline --workers {cpus} --status_view window --status_view_interval 60 --storage-file /data/{client_name}Artifacts.plaso /velociraptor/clients/{client_id}/collections/{flow_id}/uploads"
                         api = connect_timesketch_api(general_config, logger)
                         #Check if there existing sketch or not
