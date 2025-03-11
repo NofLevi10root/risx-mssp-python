@@ -255,9 +255,9 @@ def start_timesketch(row, general_config, logger):
     try:
         logger.info("WhoAmI:" + str(subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()))
         if(is_plaso_running(logger)):
-            logger.error("Timesketch is already running. Let it finish and run again later")
+            logger.error("Timesketch plaso is already running. Let it finish and run again later")
             row["Status"] = "Failed"
-            row["Error"] = "Timesketch is already running. Let it finish and run again later"
+            row["Error"] = "Timesketch plaso is already running. Let it finish and run again later"
             return row
    
         config_path = os.path.join("modules", "Velociraptor", "dependencies", "api.config.yaml")

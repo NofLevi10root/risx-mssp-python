@@ -23,12 +23,14 @@ def get_list_of_artifacts_state(logger):
     vql_query = f"""SELECT get_client_monitoring().artifacts.artifacts FROM scope()"""
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
     
-    all_active_artifacts = results[0]["get_client_monitoring().artifacts.artifacts"]
+    active_artifacts = []
+    all_active_artifacts = {"label": "All",'artifacts': results[0]["get_client_monitoring().artifacts.artifacts"]}
     if(all_active_artifacts == None):
         logger.info("There are no active monitor artifacts for all!")
         all_active_artifacts = []
     else:
         logger.info("List of artifacts that run for all:" + str(all_active_artifacts))
+        active_artifacts.append(all_active_artifacts)
 
     # Labeled:
     vql_query = f"""LET EventLabels <= get_client_monitoring().label_events SELECT label, artifacts.artifacts AS artifacts FROM EventLabels"""
@@ -38,9 +40,11 @@ def get_list_of_artifacts_state(logger):
     if not (len(results) == 1 and results[0]['label'] is None and results[0]['artifacts'] is None):
         labeled_artifacts = results
         logger.info("List of labeled artifacts:" + str(labeled_artifacts))
+        active_artifacts += labeled_artifacts
     else:
         logger.info("Labeled artifacts are empty!")
-    return all_active_artifacts, labeled_artifacts
+    logger.info("Total active artifacts:" + str(active_artifacts))
+    return active_artifacts
 
 def remove_monitor_artifact(artifact_name, logger):
     """
@@ -146,48 +150,53 @@ SELECT add_client_monitoring(
     logger.info(f"Successfully added monitoring for artifact: {artifact_name}")
 
 def artifacts_per_client_full(logger):
-    all_artifacts, labeled_artifacts = get_list_of_artifacts_state(logger)
+    active_label_artifacts = get_list_of_artifacts_state(logger)
     clients_list = get_clients(logger)
-    get_client_event_list(logger)
+    all_monitor = get_client_event_list(logger)
     # Create empty table
-    df = pd.DataFrame(columns=['clientid', 'config', 'fqdn'])
-    
-    for client in clients_list:
-        # Set client info
-        client_id = client["client_id"]
-        fqdn = client["os_info"]["fqdn"]
-        labels = client["labels"]
-
-        # Set config
-        config_json = {}
-        config_json["All"] = all_artifacts
+    df = pd.DataFrame(columns=['label', 'client_id_population', 'fqdn_population','config'])
+    # Add all possible artifacts 
+    new_row = {
+        'label': "all_monitor",
+        'client_id_population': "[]",  # Use empty JSON array instead of empty string
+        'fqdn_population': "[]",       # Use empty JSON array instead of empty string
+        'config': json.dumps(all_monitor)
+    }
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    logger.info("fking sht:" + str(active_label_artifacts))
+    for entry in active_label_artifacts:  # Iterate over list of dictionaries
+        label = entry.get("label")  # Extract label safely
+        artifacts = entry.get("artifacts", [])  # Extract artifacts list safely
         
-        # Add artifacts for each label the client has
-        for label_item in labeled_artifacts:
-            label = label_item.get("label")
-            if label in labels:
-                config_json[label] = label_item.get("artifacts", [])
+        new_row = {'label': label, 'client_id_population': [], 'fqdn_population': [], 'config': json.dumps(artifacts)}
         
-        # Serialize config to JSON string for MySQL
-        config_json_str = json.dumps(config_json)
+        for client in clients_list:
+            client_id = client.get("client_id")
+            fqdn = client.get("os_info", {}).get("fqdn", "")
+            
+            if label == "All" or label in client.get("labels", []):
+                new_row["client_id_population"].append(client_id)
+                new_row["fqdn_population"].append(fqdn)
         
-        # Create a new row and add it to the DataFrame
-        new_row = {
-            'clientid': client_id,
-            'config': config_json_str,  # Serialized JSON string
-            'fqdn': fqdn
-        }
+        # Always use json.dumps() to convert lists to JSON strings
+        # For empty lists, this will produce "[]" which is valid JSON
+        new_row["client_id_population"] = json.dumps(new_row["client_id_population"])
+        new_row["fqdn_population"] = json.dumps(new_row["fqdn_population"])
         
-        # Add the row to DataFrame
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    
     logger.info(f"Created DataFrame with {len(df)} client entries")
-    logger.info("Getting enviorment dictionary!")
+    logger.info("Getting environment dictionary!")
     env_dict = additionals.funcs.read_env_file(logger)
-    logger.info("Connecting mysql!")
+    
+    logger.info("Connecting to MySQL!")
     connection = additionals.mysql_functions.setup_mysql_connection(env_dict, logger)
-    logger.info("Pushing the dataframe into the mysql table!")
+    
+    logger.info("Pushing the DataFrame into the MySQL table!")
     push_dataframe_to_mysql(df, connection, "alert_client_config", logger)
+    
     logger.info("Completed process!")
+
 
 def push_dataframe_to_mysql(df, connection, table_name, logger):
 
@@ -248,4 +257,4 @@ if __name__ == "__main__":
     #add_monitor_artifact(artifact_name, parameters, logger)
     # In test
     #remove_monitor_artifact(artifact_name, logger)
-    #artifacts_per_client_full(logger)
+    artifacts_per_client_full(logger)
