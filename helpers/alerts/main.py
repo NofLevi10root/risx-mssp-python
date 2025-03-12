@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
-
+import thread
 # Get the absolute path of this script
 script_path = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_path)
@@ -296,6 +296,8 @@ def modify_full(logger):
     logger.info("Active labels:" + str(active_label_artifacts))
     logger.info("Config labels:" + str(config_labels))
     compare_labels(config_labels, active_label_artifacts, logger)
+    thread.sleep(10)
+    update_full(logger)
 
 if __name__ == "__main__":
     logger = additionals.funcs.setup_logger("alerts_helper.log")
