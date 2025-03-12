@@ -103,7 +103,7 @@ def get_clients(logger):
     # Construct the VQL query to remove the artifact from monitoring
     vql_query = f"""SELECT * FROM clients()"""
 
-    results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
+    results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger, False)
 
     columns_to_drop = [
         'agent_information', 
@@ -122,6 +122,7 @@ def get_clients(logger):
                     for client in results]
     logger.info(f"All Clients results: {clients}")
     return clients
+
 def add_monitor_artifact(label, artifact_name, parameters, logger=None):
     """
     Add a monitoring artifact to Velociraptor
@@ -275,7 +276,7 @@ def get_client_event_list(logger):
 
     # Run the VQL query
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger, False)
-    logger.info("client event list:" + str(results))
+    #logger.info("client event list:" + str(results))
     return results
 
 def compare_labels(config_labels, active_labels, logger):
@@ -319,7 +320,7 @@ def modify_full(logger):
     logger.info("Active labels:" + str(active_label_artifacts))
     logger.info("Config labels:" + str(config_labels))
     compare_labels(config_labels, active_label_artifacts, logger)
-    time.sleep(10)
+    time.sleep(5)
     update_full(logger)
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import json
 def load_data_from_mysql(connection, table_name, logger):
     try:
         # Construct the SQL query
-        query = f"SELECT label, config FROM {table_name}"
+        query = f"SELECT label, config FROM {table_name} where not label = 'all_monitor'"
         logger.info(f"Loading data from table {table_name}")
 
         # Use cursor to execute the query
@@ -48,8 +48,8 @@ def push_dataframe_to_mysql(df, connection, table_name, logger):
         cursor = connection.cursor()
         
         # Truncate the table first
-        logger.info(f"Truncating table {table_name}")
-        cursor.execute(f"TRUNCATE TABLE {table_name}")
+        logger.info(f"Delete table {table_name}")
+        cursor.execute(f"DELETE FROM {table_name}")
         connection.commit()
         
         # Convert all DataFrame rows to tuples at once
