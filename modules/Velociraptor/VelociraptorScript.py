@@ -89,7 +89,7 @@ def get_online_clients(logger):
 
 
     
-def run_generic_vql(query, logger):
+def run_generic_vql(query, logger, print_flag = True):
     try:
         logger.info("Run generic vql!")
         channel = setup_connection(logger)
@@ -109,14 +109,16 @@ def run_generic_vql(query, logger):
         result = []
 
         for response in stub.Query(request):
-            logger.info("response:" + str(response))
+            if(print_flag):
+                logger.info("response:" + str(response))
 
             if response.Response:
                 try:
                     # Try to parse the response as JSON
                     result = result + json.loads(response.Response)
                     # Fix: Use proper string formatting for logging
-                    logger.info(f"run_generic_vql response.Response: {str(response.Response)}")
+                    if(print_flag):
+                        logger.info(f"run_generic_vql response.Response: {str(response.Response)}")
 
                 except json.JSONDecodeError:
                     # If JSON parsing fails, store the response as a string

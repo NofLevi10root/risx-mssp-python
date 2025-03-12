@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
-import thread
+
 # Get the absolute path of this script
 script_path = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_path)
@@ -17,7 +17,7 @@ import json
 import additionals.mysql_functions
 import helpers.alerts.arguments
 import helpers.alerts.sql_operations
-
+import time
 def get_list_of_artifacts_state(logger):
     # General:
     vql_query = f"""SELECT get_client_monitoring().artifacts.artifacts FROM scope()"""
@@ -62,7 +62,7 @@ def get_list_of_artifacts_state(logger):
     logger.info("Total active artifacts: " + json.dumps(active_artifacts, indent=2))
     return active_artifacts
 
-def remove_monitor_artifact(artifact_name, logger):
+def remove_monitor_artifact(label, artifact_name, logger):
     """
     Remove a monitoring artifact from Velociraptor
 
@@ -75,14 +75,25 @@ def remove_monitor_artifact(artifact_name, logger):
     """
 
     # Construct the VQL query to remove the artifact from monitoring
-    vql_query = f"""
+    vql_query = ""
+    if(label == "All"):
+        vql_query = f"""
 LET artifact_name = "{artifact_name}"
 
 SELECT rm_client_monitoring(
     artifact=artifact_name
 ) FROM scope()
 """
-    
+    else:
+        vql_query = f"""
+LET artifact_name = "{artifact_name}"
+LET label_name = "{label}"
+
+SELECT rm_client_monitoring(
+    artifact=artifact_name,
+    label=label_name
+) FROM scope()
+"""
     # Run the VQL query
     logger.info(f"Removing monitoring for artifact: {artifact_name}")
     modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
@@ -111,7 +122,7 @@ def get_clients(logger):
                     for client in results]
     logger.info(f"All Clients results: {clients}")
     return clients
-def add_monitor_artifact(artifact_name, parameters, logger=None):
+def add_monitor_artifact(label, artifact_name, parameters, logger=None):
     """
     Add a monitoring artifact to Velociraptor
     
@@ -146,17 +157,29 @@ def add_monitor_artifact(artifact_name, parameters, logger=None):
     params_str = ",\n    ".join(params_list)
     
     # Construct the VQL query
-    vql_query = f"""
+    vql_query = ""
+    if(label == "All"):
+        vql_query = f"""
 LET artifact_name = "{artifact_name}"
-LET parameters = dict(
-    {params_str}
-)
-
+LET parameters = dict({params_str})
 SELECT add_client_monitoring(
     artifact=artifact_name,
     parameters=parameters
 ) FROM scope()
 """
+    else:
+        vql_query = f"""
+LET artifact_name = "{artifact_name}"
+LET parameters = dict({params_str})
+LET label_name = "{label}"
+
+SELECT add_client_monitoring(
+    artifact=artifact_name,
+    parameters=parameters,
+    label=label_name
+) FROM scope()
+"""
+        
     logger.info("VQL Query:" + str(vql_query))
     # Run the VQL query
     logger.info(f"Adding monitoring for artifact: {artifact_name}")
@@ -251,7 +274,7 @@ def get_client_event_list(logger):
     vql_query = f"""select name, parameters from artifact_definitions() where type = 'client_event'"""
 
     # Run the VQL query
-    results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
+    results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger, False)
     logger.info("client event list:" + str(results))
     return results
 
@@ -269,7 +292,7 @@ def compare_labels(config_labels, active_labels, logger):
             
             for artifact, parameters in config_artifacts.items():  # Extract artifact + parameters
                 if artifact not in active_artifacts:
-                    add_monitor_artifact(artifact, parameters, logger)
+                    add_monitor_artifact(label, artifact, parameters, logger)
                     print(f"ADD: Artifact '{artifact}' with parameters {parameters} should be added under label '{label}'")
 
     # Loop over active_labels to check for extra artifacts that need removal (REMOVE)
@@ -279,7 +302,7 @@ def compare_labels(config_labels, active_labels, logger):
             
             for artifact in active_artifacts:
                 if artifact not in config_artifacts:
-                    remove_monitor_artifact(artifact, logger)
+                    remove_monitor_artifact(label, artifact, logger)
                     print(f"REMOVE: Artifact '{artifact}' should be removed from label '{label}'")
 
 
@@ -296,7 +319,7 @@ def modify_full(logger):
     logger.info("Active labels:" + str(active_label_artifacts))
     logger.info("Config labels:" + str(config_labels))
     compare_labels(config_labels, active_label_artifacts, logger)
-    thread.sleep(10)
+    time.sleep(10)
     update_full(logger)
 
 if __name__ == "__main__":
