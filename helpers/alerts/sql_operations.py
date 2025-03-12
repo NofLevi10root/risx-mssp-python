@@ -1,4 +1,47 @@
 import pandas as pd
+import json
+def load_data_from_mysql(connection, table_name, logger):
+    try:
+        # Construct the SQL query
+        query = f"SELECT label, config FROM {table_name}"
+        logger.info(f"Loading data from table {table_name}")
+
+        # Use cursor to execute the query
+        cursor = connection.cursor()
+        cursor.execute(query)
+
+        # Fetch all rows
+        rows = cursor.fetchall()
+
+        # Get column names
+        columns = [column[0] for column in cursor.description]
+
+        # Process data into required format
+        result = []
+        for row in rows:
+            label = row[0]
+            config_data = row[1]
+
+            # Ensure config is deserialized properly
+            try:
+                config_dict = json.loads(config_data) if config_data else {}
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode JSON for label {label}")
+                config_dict = {}
+
+            # Append formatted data
+            result.append({
+                "label": label,
+                "artifacts": config_dict
+            })
+
+        logger.info("Successfully processed data from MySQL")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error loading data from MySQL: {str(e)}")
+        return None
+
 def push_dataframe_to_mysql(df, connection, table_name, logger):
 
     try:

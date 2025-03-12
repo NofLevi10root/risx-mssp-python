@@ -15,35 +15,51 @@ import modules.Velociraptor.VelociraptorScript
 import pandas as pd
 import json
 import additionals.mysql_functions
+import helpers.alerts.arguments
+import helpers.alerts.sql_operations
 
 def get_list_of_artifacts_state(logger):
-    # if 1 of the list is empty return empty list else return the object
-    # the all active artifacts 
     # General:
     vql_query = f"""SELECT get_client_monitoring().artifacts.artifacts FROM scope()"""
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
-    
+
     active_artifacts = []
-    all_active_artifacts = {"label": "All",'artifacts': results[0]["get_client_monitoring().artifacts.artifacts"]}
-    if(all_active_artifacts == None):
-        logger.info("There are no active monitor artifacts for all!")
-        all_active_artifacts = []
+    
+    # Convert list to dictionary format
+    if results and "get_client_monitoring().artifacts.artifacts" in results[0]:
+        all_artifacts_list = results[0]["get_client_monitoring().artifacts.artifacts"]
+        all_active_artifacts = {"label": "All", 'artifacts': {artifact: {} for artifact in all_artifacts_list}}
     else:
-        logger.info("List of artifacts that run for all:" + str(all_active_artifacts))
-        active_artifacts.append(all_active_artifacts)
+        logger.info("There are no active monitor artifacts for all!")
+        all_active_artifacts = {"label": "All", 'artifacts': {}}
+    
+    logger.info("List of artifacts that run for all: " + json.dumps(all_active_artifacts, indent=2))
+    active_artifacts.append(all_active_artifacts)
 
     # Labeled:
     vql_query = f"""LET EventLabels <= get_client_monitoring().label_events SELECT label, artifacts.artifacts AS artifacts FROM EventLabels"""
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
+    
     labeled_artifacts = []
-    # Check if it matches the empty pattern: [{'label': None, 'artifacts': None}]
-    if not (len(results) == 1 and results[0]['label'] is None and results[0]['artifacts'] is None):
-        labeled_artifacts = results
-        logger.info("List of labeled artifacts:" + str(labeled_artifacts))
+    
+    # Check if results are not empty or null
+    if results and not (len(results) == 1 and results[0]['label'] is None and results[0]['artifacts'] is None):
+        for entry in results:
+            label = entry["label"]
+            artifacts_list = entry["artifacts"]
+            
+            # Convert list to dictionary
+            labeled_artifacts.append({
+                "label": label,
+                "artifacts": {artifact: {} for artifact in artifacts_list} if artifacts_list else {}
+            })
+    
+        logger.info("List of labeled artifacts: " + json.dumps(labeled_artifacts, indent=2))
         active_artifacts += labeled_artifacts
     else:
         logger.info("Labeled artifacts are empty!")
-    logger.info("Total active artifacts:" + str(active_artifacts))
+    
+    logger.info("Total active artifacts: " + json.dumps(active_artifacts, indent=2))
     return active_artifacts
 
 def remove_monitor_artifact(artifact_name, logger):
@@ -76,8 +92,6 @@ def get_clients(logger):
     # Construct the VQL query to remove the artifact from monitoring
     vql_query = f"""SELECT * FROM clients()"""
 
-    # Run the VQL query
-    logger.info(f"Removing monitoring for artifact: {artifact_name}")
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
 
     columns_to_drop = [
@@ -149,7 +163,7 @@ SELECT add_client_monitoring(
     modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
     logger.info(f"Successfully added monitoring for artifact: {artifact_name}")
 
-def artifacts_per_client_full(logger):
+def update_full(logger):
     active_label_artifacts = get_list_of_artifacts_state(logger)
     clients_list = get_clients(logger)
     all_monitor = get_client_event_list(logger)
@@ -193,7 +207,7 @@ def artifacts_per_client_full(logger):
     connection = additionals.mysql_functions.setup_mysql_connection(env_dict, logger)
     
     logger.info("Pushing the DataFrame into the MySQL table!")
-    push_dataframe_to_mysql(df, connection, "alert_client_config", logger)
+    helpers.alerts.sql_operations.push_dataframe_to_mysql(df, connection, "alert_client_config", logger)
     
     logger.info("Completed process!")
 
@@ -240,21 +254,55 @@ def get_client_event_list(logger):
     results = modules.Velociraptor.VelociraptorScript.run_generic_vql(vql_query, logger)
     logger.info("client event list:" + str(results))
     return results
+
+def compare_labels(config_labels, active_labels, logger):
+    # Convert active_labels to a dictionary for faster lookup
+    active_labels_dict = {item["label"]: item["artifacts"] for item in active_labels}
+    
+    # Convert config_labels to a dictionary for faster lookup
+    config_labels_dict = {item["label"]: item["artifacts"] for item in config_labels}
+
+    # Loop over config_labels to check for missing artifacts in active_labels (ADD)
+    for label, config_artifacts in config_labels_dict.items():
+        if label in active_labels_dict:
+            active_artifacts = active_labels_dict[label]
+            
+            for artifact, parameters in config_artifacts.items():  # Extract artifact + parameters
+                if artifact not in active_artifacts:
+                    add_monitor_artifact(artifact, parameters, logger)
+                    print(f"ADD: Artifact '{artifact}' with parameters {parameters} should be added under label '{label}'")
+
+    # Loop over active_labels to check for extra artifacts that need removal (REMOVE)
+    for label, active_artifacts in active_labels_dict.items():
+        if label in config_labels_dict:
+            config_artifacts = config_labels_dict[label]
+            
+            for artifact in active_artifacts:
+                if artifact not in config_artifacts:
+                    remove_monitor_artifact(artifact, logger)
+                    print(f"REMOVE: Artifact '{artifact}' should be removed from label '{label}'")
+
+
+def modify_full(logger):
+    # Get data
+    logger.info("Getting states of monitoring artifacts!")
+    active_label_artifacts = get_list_of_artifacts_state(logger)
+    logger.info("Getting environment dictionary!")
+    env_dict = additionals.funcs.read_env_file(logger)
+    
+    logger.info("Connecting to MySQL!")
+    connection = additionals.mysql_functions.setup_mysql_connection(env_dict, logger)
+    config_labels = helpers.alerts.sql_operations.load_data_from_mysql(connection, "alert_client_config", logger)
+    logger.info("Active labels:" + str(active_label_artifacts))
+    logger.info("Config labels:" + str(config_labels))
+    compare_labels(config_labels, active_label_artifacts, logger)
+
 if __name__ == "__main__":
     logger = additionals.funcs.setup_logger("alerts_helper.log")
+    args = helpers.alerts.arguments.process_arguments()
+    # Process the argument
+    if args.modification:
+        modify_full(logger)
+    elif args.update:
+        update_full(logger)
     
-    # Example usage
-    #artifact_name = "Generic.Client.Stats"
-    artifact_name = "Custom.Windows.Detection.Usn.malwareTest"
-    
-    parameters = {
-        "PathRegex": r"(?i).*(powershell|pwsh).*\\.pf$",  # Regex pattern
-        "Device": r"C:\\"  # Use raw string for correct escaping
-    }
-    
-    parameters = {}
-    #Working [Adding monitor artifact]
-    #add_monitor_artifact(artifact_name, parameters, logger)
-    # In test
-    #remove_monitor_artifact(artifact_name, logger)
-    artifacts_per_client_full(logger)
