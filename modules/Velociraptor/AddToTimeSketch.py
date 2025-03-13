@@ -55,6 +55,7 @@ def is_plaso_running(logger):
         logger.info("In plaso_running function!")
         # Run the docker ps command
         result = subprocess.run(['sudo','docker', 'ps'], capture_output=True, text=True, check=True)
+        logger.info("Twwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww")
         # Check if log2timeline/plaso is in the output
         return 'log2timeline/plaso' in result.stdout
     except subprocess.CalledProcessError as e:
@@ -262,7 +263,8 @@ def start_timesketch(row, general_config, logger):
             row["Status"] = "Failed"
             row["Error"] = "Timesketch plaso is already running. Let it finish and run again later"
             return row
-   
+    
+        logger.info("KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK")
         config_path = os.path.join("modules", "Velociraptor", "dependencies", "api.config.yaml")
         velociraptor_config = ""
         with open(config_path, 'r') as f:
