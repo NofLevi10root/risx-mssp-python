@@ -4,11 +4,12 @@ import sys
 from datetime import datetime
 from threading import Thread
 
+import helpers.ai_vulnerability_managment.main
 import modules.Velociraptor.AddToTimeSketch
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 print(f"Current working directory: {os.getcwd()}")
-
+import helpers.ai_vulnerability_managment
 import logging
 import json
 import modules.Velociraptor.VelociraptorScript
@@ -18,6 +19,8 @@ import modules.SmallModules.SmallModules
 import additionals.mysql_functions
 import additionals.funcs
 import additionals.logger
+import random
+import subprocess
 
 def main():
     print("Start mssp!")
@@ -55,6 +58,10 @@ def main():
     new_requests = config_data["RequestStatus"][new_objects_start_index:]
     logger.info("New requests:" + str(new_requests))
     for request in new_requests:
+        if(request["ModuleName"] == "AI Vulnerability Management"):
+            logger.info("Inside AI Vulnerability Managment!")
+            subprocess.run(["python", "helpers/ai_vulnerability_managment/main.py"], capture_output=True, text=True)
+            logger.info(str(request))
         if request["ModuleName"] == "Velociraptor":
             request = modules.Velociraptor.VelociraptorScript.run_artifact(request, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)

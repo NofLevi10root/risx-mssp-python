@@ -354,60 +354,78 @@ def create_module_dict(modules):
     return enabled_modules
 
 def add_in_progress_rows(config_data, previous_config_date, logger):
-    print("test")
-    #current_datetime = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-    current_datetime = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
-    existing_modules = create_module_dict(config_data["Modules"])
-    # existing_modules = create_module_dict(config_data["Modules"])
+    try:
+        print("test")
+        #current_datetime = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        current_datetime = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
+        existing_modules = create_module_dict(config_data["Modules"])
+        # existing_modules = create_module_dict(config_data["Modules"])
 
-    config_data, assets_per_module = fill_assets_per_module(config_data, existing_modules, current_datetime, logger)
-    #json.dump(config_data, open('test2.json', 'w'))
-    velociraptor_submodules = config_data.get("Modules", {}).get("Velociraptor", {}).get("SubModules", {})
-    print(assets_per_module)
-    for submodule_name, submodule_data in velociraptor_submodules.items():
-        # Ensure submodule_data is a dictionary and check if it's enabled
-        #If We
-        if isinstance(submodule_data, dict) and submodule_data.get("Enable", False):
-            config_data["Modules"]["Velociraptor"]["SubModules"][submodule_name]["LastRunDate"] = current_datetime
-            row = additionals.funcs.add_row("Velociraptor", submodule_name, str(submodule_data["ArtifactTimeOutInMinutes"]), submodule_data["TimeInterval"], submodule_data["Arguments"], previous_config_date, "", logger)
+        config_data, assets_per_module = fill_assets_per_module(config_data, existing_modules, current_datetime, logger)
+        #json.dump(config_data, open('test2.json', 'w'))
+        velociraptor_submodules = config_data.get("Modules", {}).get("Velociraptor", {}).get("SubModules", {})
+        print(assets_per_module)
+        for submodule_name, submodule_data in velociraptor_submodules.items():
+            # Ensure submodule_data is a dictionary and check if it's enabled
+            #If We
+            if isinstance(submodule_data, dict) and submodule_data.get("Enable", False):
+                config_data["Modules"]["Velociraptor"]["SubModules"][submodule_name]["LastRunDate"] = current_datetime
+                row = additionals.funcs.add_row("Velociraptor", submodule_name, str(submodule_data["ArtifactTimeOutInMinutes"]), submodule_data["TimeInterval"], submodule_data["Arguments"], previous_config_date, "", logger)
+                config_data['RequestStatus'].append(row)
+                
+
+        if config_data.get("Modules", {}).get("TimeSketch", {}).get("Enable", False):
+            timesketch_data = config_data["Modules"]["TimeSketch"]
+            config_data["Modules"]["TimeSketch"]["LastRunDate"] = current_datetime
+            #To fix when changing it
+            #row = additionals.funcs.add_row("TimeSketch", "", str(config_data["Modules"]["TimeSketch"]["ArtifactTimeOutInMinutes"]), "", config_data["Modules"]["TimeSketch"]["Arguments"], previous_config_date, return_value_if_key_exists(assets_per_module, "TimeSketch"), logger)
+            row = additionals.funcs.add_row("TimeSketch", "", str(config_data["Modules"]["TimeSketch"]["ExpireDate"]), "", config_data["Modules"]["TimeSketch"]["Arguments"], previous_config_date, return_value_if_key_exists(assets_per_module, "TimeSketch"), logger)
             config_data['RequestStatus'].append(row)
+        else:
+            logger.info("Timesketch is not enabled in config!")
+
+        if(config_data["Modules"]["Nuclei"]["Enable"] == True):
+            nuclei_data = config_data["Modules"]["Nuclei"]
+            config_data["Modules"]["Nuclei"]["LastRunDate"] = current_datetime
+            row = additionals.funcs.add_row( "Nuclei", "", "", "", nuclei_data["Arguments"], previous_config_date , return_value_if_key_exists(assets_per_module, "Nuclei"), logger)
+            config_data['RequestStatus'].append(row)
+        else:
+            logger.info("Nuclei is not enable in config!")
+
+        if(config_data["Modules"]["Shodan"]["Enable"] == True):
+            shodan_data = config_data["Modules"]["Shodan"]
+            config_data["Modules"]["Shodan"]["LastRunDate"] = current_datetime
+            row = additionals.funcs.add_row( "Shodan", "", "", "", "", previous_config_date , return_value_if_key_exists(assets_per_module, "Shodan"), logger)
+            config_data['RequestStatus'].append(row)
+        else:
+            logger.info("Shodan is not enable in config!")
+        
+
+        if(config_data["Modules"]["LeakCheck"]["Enable"] == True):
+            leakcheck_data = config_data["Modules"]["LeakCheck"]
+            config_data["Modules"]["LeakCheck"]["LastRunDate"] = current_datetime
+            row = additionals.funcs.add_row("LeakCheck", "", "", "", "", previous_config_date , return_value_if_key_exists(assets_per_module, "LeakCheck"), logger)
+            config_data['RequestStatus'].append(row)
+        else:
+            logger.info("LeakCheck is not enable in config!")
+
+        if(config_data["Modules"]["AIVulnerability"]["Enable"] == True):
+            import random
+            #ai_vuln_data = config_data["Modules"]["AIVulnerability"]
+            #config_data["Modules"]["AIVulnerability"]["LastRunDate"] = current_datetime
+            products = config_data["General"]["IntervalConfigurations"]["AiManagement"]["PRODUCTS"]
+            row = additionals.funcs.add_row("AI Vulnerability Management", "", "", "", "", previous_config_date , products, logger)
             
-
-    if config_data.get("Modules", {}).get("TimeSketch", {}).get("Enable", False):
-        timesketch_data = config_data["Modules"]["TimeSketch"]
-        config_data["Modules"]["TimeSketch"]["LastRunDate"] = current_datetime
-        #To fix when changing it
-        #row = additionals.funcs.add_row("TimeSketch", "", str(config_data["Modules"]["TimeSketch"]["ArtifactTimeOutInMinutes"]), "", config_data["Modules"]["TimeSketch"]["Arguments"], previous_config_date, return_value_if_key_exists(assets_per_module, "TimeSketch"), logger)
-        row = additionals.funcs.add_row("TimeSketch", "", str(config_data["Modules"]["TimeSketch"]["ExpireDate"]), "", config_data["Modules"]["TimeSketch"]["Arguments"], previous_config_date, return_value_if_key_exists(assets_per_module, "TimeSketch"), logger)
-        config_data['RequestStatus'].append(row)
-    else:
-        logger.info("Timesketch is not enabled in config!")
-
-    if(config_data["Modules"]["Nuclei"]["Enable"] == True):
-        nuclei_data = config_data["Modules"]["Nuclei"]
-        config_data["Modules"]["Nuclei"]["LastRunDate"] = current_datetime
-        row = additionals.funcs.add_row( "Nuclei", "", "", "", nuclei_data["Arguments"], previous_config_date , return_value_if_key_exists(assets_per_module, "Nuclei"), logger)
-        config_data['RequestStatus'].append(row)
-    else:
-        logger.info("Nuclei is not enable in config!")
-
-    if(config_data["Modules"]["Shodan"]["Enable"] == True):
-        shodan_data = config_data["Modules"]["Shodan"]
-        config_data["Modules"]["Shodan"]["LastRunDate"] = current_datetime
-        row = additionals.funcs.add_row( "Shodan", "", "", "", "", previous_config_date , return_value_if_key_exists(assets_per_module, "Shodan"), logger)
-        config_data['RequestStatus'].append(row)
-    else:
-        logger.info("Shodan is not enable in config!")
-    
-
-    if(config_data["Modules"]["LeakCheck"]["Enable"] == True):
-        leakcheck_data = config_data["Modules"]["LeakCheck"]
-        config_data["Modules"]["LeakCheck"]["LastRunDate"] = current_datetime
-        row = additionals.funcs.add_row("LeakCheck", "", "", "", "", previous_config_date , return_value_if_key_exists(assets_per_module, "LeakCheck"), logger)
-        config_data['RequestStatus'].append(row)
-    else:
-        logger.info("LeakCheck is not enable in config!")
-    return config_data
+            row["UniqueID"] = str(random.randint(9000000, 99999999))
+            row["ExpireDate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            row["Status"] = "Complete"
+            row["Error"] = ""
+            config_data['RequestStatus'].append(row)
+        #else:
+        #   logger.info("AI vulnerability managment is not enable in config!")
+        return config_data
+    except Exception as e:
+        logger.info("Crush in add in progress row:" + str(e))
 
 def connect_db_update_config(env_dict, previous_config_date, config_data, logger):
     connection = additionals.mysql_functions.setup_mysql_connection(env_dict,logger)
