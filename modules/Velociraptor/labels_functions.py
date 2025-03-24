@@ -88,7 +88,7 @@ def main():
         # Get all client labels
         logger.info("Getting client labels dict:")
         client_labels = create_client_labels_dict(logger)
-        
+        logger.info("Client_labels:" + str(client_labels))
         # Example of add
         logger.info("Adding alef,bet,gimel")
         operation = "set"
