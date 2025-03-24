@@ -148,7 +148,7 @@ def add_row(ModuleName, SubModule, ArtifactTimeOutInMinutes, TimeInterval, Argum
         # Add Expire_Date to start date
         minutes = int(ArtifactTimeOutInMinutes)  # Convert to integer representing minutes
         new_expire_date = StartDate + timedelta(minutes=minutes)
-        if ModuleName == "TimeSketch":
+        if ModuleName == "TimeSketch" or ModuleName == "Kape":
             new_row["ArtifactTimeOutInMinutes"] = str(minutes * 60)
         else:
             new_row['ArtifactTimeOutInMinutes'] = new_expire_date.strftime(datetime_format)
@@ -383,6 +383,15 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
             config_data['RequestStatus'].append(row)
         else:
             logger.info("Timesketch is not enabled in config!")
+
+
+        if config_data.get("Modules", {}).get("Kape", {}).get("Enable", False):
+            timesketch_data = config_data["Modules"]["Kape"]
+            config_data["Modules"]["Kape"]["LastRunDate"] = current_datetime
+            row = additionals.funcs.add_row("Kape", "", str(config_data["Modules"]["Kape"]["ExpireDate"]), "", config_data["Modules"]["Kape"]["Arguments"], previous_config_date, return_value_if_key_exists(assets_per_module, "Kape"), logger)
+            config_data['RequestStatus'].append(row)
+        else:
+            logger.info("Kape is not enabled in config!")
 
         if(config_data["Modules"]["Nuclei"]["Enable"] == True):
             nuclei_data = config_data["Modules"]["Nuclei"]

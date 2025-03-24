@@ -359,3 +359,174 @@ def start_timesketch(row, general_config, logger):
         logger.info("Removing plaso containers!")
         additionals.funcs.run_subprocess('sudo docker ps -a -q --filter "ancestor=log2timeline/plaso" | sudo xargs -r docker rm -f',"", logger)
         return row
+
+
+def start_kape_collection(row, general_config, logger):
+    # Here, based on the parsed arguments, you can call different functions
+    try:
+        logger.info("WhoAmI:" + str(subprocess.run(['whoami'], stdout=subprocess.PIPE, text=True).stdout.strip()))
+        if(is_plaso_running(logger)):
+            logger.error("Kape collection is already running. Let it finish and run again later")
+            row["Status"] = "Failed"
+            row["Error"] = "Kape collection is already running. Let it finish and run again later"
+            return row
+    
+        logger.info("Twwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww")
+        logger.info("Starting Kape collection for multiple clients")
+        config_path = os.path.join("modules", "Velociraptor", "dependencies", "api.config.yaml")
+        velociraptor_config = ""
+        with open(config_path, 'r') as f:
+            velociraptor_config = yaml.safe_load(f)
+
+        creds = grpc.ssl_channel_credentials(
+        root_certificates=velociraptor_config["ca_certificate"].encode("utf8"),
+        private_key=velociraptor_config["client_private_key"].encode("utf8"),
+        certificate_chain=velociraptor_config["client_cert"].encode("utf8"))
+        options = (('grpc.ssl_target_name_override', "VelociraptorServer",),)
+
+        # Establish a secure channel
+        with grpc.secure_channel(velociraptor_config["api_connection_string"], creds, options) as channel:
+            host_client_id_dict = modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
+            logger.info("Current host_client_id_dict:" + str(host_client_id_dict))
+            logger.info("Running artifact")
+            logger.info("KapePopulation:" + str(row["Population"]))
+            
+            # Start running on all clients concurrently
+            collection_results = []
+            client_flows = []
+            
+            # First launch all the artifacts in parallel
+            for client in row["Population"]:
+                try:
+                    client_name = client["asset_string"]
+                    if(client_name in host_client_id_dict):
+                        logger.info("Client name:" + client_name)
+                        client_id = host_client_id_dict[client_name]
+                        logger.info(f"Timeout is {row['ArtifactTimeOutInMinutes']} minutes!")
+                        logger.info(f"Kape CPU limit: 50")
+                        cpu_limit = 50
+                        
+                        # Launch the artifact collection but don't wait for completion
+                        # Just get the flow ID
+                        stub = api_pb2_grpc.APIStub(channel)
+                        flow_id = run_kape_artifact(stub, client_id, row["Arguments"]["KapeCollection"], 
+                                           int(row["ArtifactTimeOutInMinutes"]), cpu_limit, logger)
+                        
+                        if flow_id:
+                            logger.info(f"Started flow for {client_name} with flowid: {flow_id}")
+                            
+                            # Track this client and flow
+                            client_flows.append({
+                                "client_name": client_name,
+                                "client_id": client_id,
+                                "flow_id": flow_id,
+                                "stub": stub,
+                                "status": "running"
+                            })
+                        else:
+                            logger.error(f"Failed to start artifact for {client_name}")
+                            collection_results.append({
+                                "client_name": client_name,
+                                "status": "error",
+                                "message": "Failed to start artifact collection"
+                            })
+                except Exception as e:
+                    logger.error(f"Error starting Kape collection for client {client_name}: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    collection_results.append({
+                        "client_name": client_name,
+                        "status": "error",
+                        "message": f"Error: {str(e)}"
+                    })
+            
+            # Now wait for all the flows to complete - this is the monitoring phase
+            logger.info("All artifact collections started, now monitoring completion...")
+            
+            # Use the same start_time for all flows to enforce a global timeout
+            start_time = time.time()
+            global_timeout = int(row["ArtifactTimeOutInMinutes"]) * 60  # Convert minutes to seconds
+            
+            # Track which clients still need monitoring
+            pending_clients = list(client_flows)
+            
+            # Loop until all clients are done or timeout is reached
+            while pending_clients and (time.time() - start_time < global_timeout):
+                # Process each pending client
+                still_pending = []
+                
+                for client_flow in pending_clients:
+                    try:
+                        # Check flow state using the existing get_flow_state function
+                        state = get_flow_state(
+                            client_flow["stub"], 
+                            client_flow["client_id"], 
+                            client_flow["flow_id"], 
+                            global_timeout,
+                            logger
+                        )
+                        
+                        if state == "FINISHED":
+                            logger.info(f"Artifact for {client_flow['client_name']} completed successfully")
+                            collection_results.append({
+                                "client_name": client_flow["client_name"],
+                                "status": "complete",
+                                "flow_id": client_flow["flow_id"],
+                                "message": "Collection successful"
+                            })
+                            client_flow["status"] = "complete"
+                            # Don't add to still_pending
+                        elif state == "FAILED" or state == "ERROR":
+                            logger.error(f"Artifact for {client_flow['client_name']} failed")
+                            collection_results.append({
+                                "client_name": client_flow["client_name"],
+                                "status": "error",
+                                "flow_id": client_flow["flow_id"],
+                                "message": f"Collection failed with state: {state}"
+                            })
+                            client_flow["status"] = "error"
+                            # Don't add to still_pending
+                        else:
+                            # Still running or unknown state, keep monitoring
+                            logger.info(f"Artifact for {client_flow['client_name']} is still running (state: {state})")
+                            still_pending.append(client_flow)
+                    except Exception as e:
+                        logger.error(f"Error checking status for {client_flow['client_name']}: {str(e)}")
+                        # Keep checking on error
+                        still_pending.append(client_flow)
+                
+                # Update pending clients
+                pending_clients = still_pending
+                
+                # If we still have pending clients, wait before checking again
+                if pending_clients:
+                    logger.info(f"Waiting for {len(pending_clients)} clients to complete. Checking again in 30 seconds...")
+                    time.sleep(30)
+            
+            # Handle any clients that are still pending after the loop exits
+            for client_flow in pending_clients:
+                logger.warning(f"Artifact collection for {client_flow['client_name']} did not complete within the timeout")
+                collection_results.append({
+                    "client_name": client_flow["client_name"],
+                    "status": "timeout",
+                    "flow_id": client_flow["flow_id"],
+                    "message": "Collection timed out"
+                })
+            
+            # Update row with results
+            row["KapeResults"] = collection_results
+            success_count = sum(1 for result in collection_results if result["status"] == "complete")
+            error_count = len(collection_results) - success_count
+            
+            if error_count > 0:
+                row["Status"] = "Partial Success" if success_count > 0 else "Failed"
+                row["Error"] = f"{error_count} client(s) failed or timed out during collection"
+            else:
+                row["Status"] = "Complete"
+            
+            return row
+    except Exception as e:
+        logger.error("Kape collection unknown error:" + str(e))
+        logger.error(traceback.format_exc())
+        row["Status"] = "Failed"
+        row["Error"] = "Unknown error:" + str(e)
+        return row
