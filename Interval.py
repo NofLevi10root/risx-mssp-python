@@ -945,7 +945,7 @@ async def malware_func(
 
                                                 process = response_element.get(
                                                     "Filename", "Unknown"
-                                                ).split("-")[0]
+                                                )#.split("-")[0]
                                                 tempObjTime = {
                                                     "AlertID": id_generator(),
                                                     "Artifact": "Python.Suspicious.File.Found",  # Not needed but fked up the UI
@@ -954,6 +954,10 @@ async def malware_func(
                                                     ),
                                                     "Process": process,
                                                     "Client FQDN": fqdn,
+                                                    "Pf File Path": response_element.get(
+                                                        "OSPath", "Unknown"
+                                                    ),
+                                                    f"Pf {"Create" if "FILE_CREATE" in response_element.get("OSPath", "Unknown") else "Modified"} Time":response_element.get("Timestamp", "Unknown"),
                                                     "Suspicious File": suspicious_file_path,
                                                     "UserInput": {
                                                         "UserId": "",
