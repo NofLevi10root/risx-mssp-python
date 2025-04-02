@@ -957,7 +957,7 @@ async def malware_func(
                                                     "Pf File Path": response_element.get(
                                                         "OSPath", "Unknown"
                                                     ),
-                                                    f"Pf {"Create" if "FILE_CREATE" in response_element.get("OSPath", "Unknown") else "Modified"} Time":response_element.get("Timestamp", "Unknown"),
+                                                    f"Pf {'Create' if 'FILE_CREATE' in response_element.get('OSPath', 'Unknown') else 'Modified'} Time":response_element.get("Timestamp", "Unknown"),
                                                     "Suspicious File": suspicious_file_path,
                                                     "UserInput": {
                                                         "UserId": "",
