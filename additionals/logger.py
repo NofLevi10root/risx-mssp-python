@@ -2,10 +2,34 @@ import logging
 from datetime import datetime
 import sys
 import os
+import shutil
 
 def setup_logger(logger_name):
     logging_level = logging.INFO
-    logging_path = os.path.join("logs", logger_name)
+    logs_dir = "logs"
+    logging_path = os.path.join(logs_dir, logger_name)
+    
+    # Create logs directory if it doesn't exist
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+    
+    # Check if log file exists and is larger than 20MB
+    if os.path.exists(logging_path) and os.path.getsize(logging_path) > 20 * 1024 * 1024:  # 20MB in bytes
+        # Create archive directory if it doesn't exist
+        archive_dir = os.path.join(logs_dir, "archived_logs")
+        if not os.path.exists(archive_dir):
+            os.makedirs(archive_dir)
+        
+        # Generate archive filename with current date and time
+        timestamp = datetime.now().strftime("%Y%m%d%H")
+        archive_filename = f"{logger_name}_{timestamp}"
+        archive_path = os.path.join(archive_dir, archive_filename)
+        
+        # Copy the current log file to the archive
+        shutil.copy2(logging_path, archive_path)
+        
+        # Clear the original log file (open with 'w' truncates the file)
+        open(logging_path, 'w').close()
     
     # Create a logger object with the provided name
     logger = logging.getLogger(logger_name)  # Use logger_name as the logger name

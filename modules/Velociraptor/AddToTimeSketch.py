@@ -252,7 +252,18 @@ def get_timeline_id(api, sketch_id, timeline_name, logger):
         logger.error(f"Unexpected error: {str(e)}")
         logger.error(traceback.format_exc())
         return None
-    
+
+def make_sketches_public(api, logger):
+    sketches = list(api.list_sketches())
+            
+    if sketches:   
+        total_sketches = len(sketches)
+        logger.info(f"Found {total_sketches} sketches")
+        
+        for sketch in sketches:
+            logger.info(f"Making sketch '{sketch.name}' (ID: {sketch.id}) public")
+            # First attempt - use set_acl if available (newer API)
+            sketch.set_acl(user_list=[], group_list=[], make_public=True)
 def start_timesketch(row, general_config, logger):
     # Here, based on the parsed arguments, you can call different functions
     # For example:
@@ -341,10 +352,12 @@ def start_timesketch(row, general_config, logger):
                             row["UniqueID"]["SketchID"] = get_sketch_id(api, row["Arguments"]["SketchName"], logger)
                         row["UniqueID"]["TimelineID"] = get_timeline_id(api, row["UniqueID"]["SketchID"], row["UniqueID"]["TimelineID"], logger)
                         logger.info(row["UniqueID"]["TimelineID"])
+                        #make_sketches_public(api, logger)
                         api.session.close()
                 except Exception as e:
                     logger.error("Mid run timesketch error:" + str(e))
                     logger.error(traceback.format_exc())
+                    #make_sketches_public(api, logger)
                     api.session.close()
 
             #row["Status"] = "Hunting"

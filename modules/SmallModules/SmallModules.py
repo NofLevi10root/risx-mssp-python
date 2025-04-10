@@ -13,59 +13,64 @@ from datetime import datetime, timedelta
 import re
 from leakcheck import LeakCheckAPI_v2
 
+import json
+from datetime import datetime
+
 def process_leakcheck_json(data, output_path, logger):
-    """Flatten 'source' dictionary, correct the 'dob' field, and save the combined results."""
+    """Flatten 'source' dictionary, correct the 'dob' field, and save the combined results in dictionary format for Elastic."""
     
     def flatten_and_correct_dob(record, logger):
         """Flatten the 'source' dictionary, correct 'dob' field."""
         try:
             if 'source' in record:
-                
                 source = record.pop('source')
                 for key, value in source.items():
                     record[f'source_{key}'] = value
         except Exception as e:
             logger.error(f"Error processing record: {e}")
-
         return record
 
     try:
-        # Load the JSON file
-        logger.info("Output path:" + output_path)
-        #logger.info(f"Loaded JSON file: {input_path}")
+        logger.info("Output path: " + output_path)
         
         # Extract and flatten the 'result' lists from each response
         combined_results = []
         for item in data:
-            if(len(item["Response"]) == 0):
+            if len(item["Response"]) == 0:
                 continue
             asset_parent_id = item["Name"]["asset_parent_id"]
             asset_string = item["Name"]["asset_string"]
-            if item["Response"] and item["Response"]:
-                for result in item["Response"]:
-                    #logger.info(result)
-                    result["asset_string"] = asset_string
-                    result["asset_parent_id"] = asset_parent_id
-                    result["@timestamp"] = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
-                    corrected_record = flatten_and_correct_dob(result, logger)
-                    combined_results.append(corrected_record)
+            # Process each result in the Response list
+            for result in item["Response"]:
+                result["asset_string"] = asset_string
+                result["asset_parent_id"] = asset_parent_id
+                result["@timestamp"] = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
+                corrected_record = flatten_and_correct_dob(result, logger)
+                combined_results.append(corrected_record)
         
-        # Save the combined and corrected results to a new JSON file
-        logger.info("Data before elastic" + str(combined_results))
-        with open(output_path, 'w') as outfile:
-            json.dump(combined_results, outfile, indent=4)
+        # Convert the list of results to a dictionary with unique keys (using list index as key)
+        elastic_data = {str(i): record for i, record in enumerate(combined_results)}
+        logger.info("Data before elastic: " + str(elastic_data))
+        
+        with open(output_path, 'w', encoding='utf-8') as outfile:
+            json.dump(elastic_data, outfile, indent=4)
         logger.info(f"Processed file saved to: {output_path}")
-        return combined_results
+        return elastic_data
     except Exception as e:
         logger.error(f"Error processing JSON file: {e}")
+        raise
 
+
+
+import json
+from datetime import datetime
 
 def format_shodan_json(input_file, output_file, logger):
     def flatten_json(data):
         flattened_data = []
 
         for entry in data:
-            domain = entry.get('Domain', '')
+            domain = entry.get('Domain', {})
             response = entry.get('Response', {})
 
             # Check if response is a dictionary
@@ -85,7 +90,15 @@ def format_shodan_json(input_file, output_file, logger):
                     logger.warning(f"Skipping non-dictionary match: {match}")
                     continue
 
-                flat_entry = {"asset_string": domain["asset_string"], "asset_parent_id": domain["asset_parent_id"]}
+                # Ensure domain is a dictionary before accessing its keys
+                if not isinstance(domain, dict):
+                    logger.error(f"Expected 'Domain' to be a dictionary, got {type(domain).__name__}. Skipping match.")
+                    continue
+
+                flat_entry = {
+                    "asset_string": domain.get("asset_string", ""),
+                    "asset_parent_id": domain.get("asset_parent_id", "")
+                }
                 flat_entry.update(recursive_flatten(match))
                 flat_entry['@timestamp'] = format_timestamp(flat_entry.get('timestamp'))
                 flattened_data.append(flat_entry)
@@ -136,13 +149,17 @@ def format_shodan_json(input_file, output_file, logger):
     flattened_data = flatten_json(data)
     logger.info("Flattening complete")
 
-    # Save the flattened data to the output file
+    # Convert the list of flattened entries to a dictionary with unique keys (using list index)
+    elastic_data = {str(i): doc for i, doc in enumerate(flattened_data)}
+
+    # Save the flattened data (in dictionary format) to the output file
     try:
         with open(output_file, 'w', encoding='utf-8') as outfile:
-            json.dump(flattened_data, outfile, indent=2)
+            json.dump(elastic_data, outfile, indent=2)
         logger.info(f"Data has been formatted and saved to {output_file}")
     except IOError as e:
         logger.error(f"IOError while saving to {output_file}: {e}")
+
         
 def run_shodan(row, api_key, population,elasticIp, logger):
     logger.info("Entering shodan!")

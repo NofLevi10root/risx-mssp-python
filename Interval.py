@@ -1203,7 +1203,6 @@ async def run_velociraptor_alerts(time_interval):
 
 async def main():
     logger = additionals.funcs.setup_logger("interval.log")
-    # run_velociraptor_alerts()
     logger.info("Closing previous script if running!")
     time_to_sleep_for_all_modules = {}
     try:
@@ -1221,6 +1220,7 @@ async def main():
             .get("IntervalConfigurations", {})
             .get("IntervalTimes", {})
         )
+        logger.info(f"time_to_sleep_for_all_modules {str(time_to_sleep_for_all_modules)}")
 
         # Convert each time value from minutes to seconds
         if time_to_sleep_for_all_modules == {}:

@@ -422,7 +422,7 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
             import random
             #ai_vuln_data = config_data["Modules"]["AIVulnerability"]
             #config_data["Modules"]["AIVulnerability"]["LastRunDate"] = current_datetime
-            products = config_data["General"]["IntervalConfigurations"]["AiManagement"]["PRODUCTS"]
+            products = config_data["Modules"]["AIVulnerability"]["Arguments"]["PRODUCTS"]
             row = additionals.funcs.add_row("AI Vulnerability Management", "", "", "", "", previous_config_date , products, logger)
             
             row["UniqueID"] = str(random.randint(9000000, 99999999))
