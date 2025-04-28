@@ -419,14 +419,14 @@ async def run_updates_daily(time_interval):
                 .get("ModulesUpdates", {})
                 .get("UpdateVelociraptorModules", [])
             )
-            logger.info("Creating client_id/hostname json dict!")
-            velociraptor_client_dict = (
-                modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
-            )
-            with open(
-                os.path.join("response_folder", "velociraptor_clients.json"), "w"
-            ) as f:
-                json.dump(velociraptor_client_dict, f)
+            # logger.info("Creating client_id/hostname json dict!")
+            # velociraptor_client_dict = (
+            #     modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
+            # )
+            # with open(
+            #     os.path.join("response_folder", "velociraptor_clients.json"), "w"
+            # ) as f:
+            #     json.dump(velociraptor_client_dict, f)
             logger.info("Update modules:" + str(artifact_list))
             logger.info("Running daily task!")
             for artifact_name in artifact_list:
@@ -1062,6 +1062,14 @@ async def run_velociraptor_alerts(time_interval):
                     )
                 )[0][0]
             )
+            logger.info("Creating client_id/hostname json dict!")
+            velociraptor_client_dict = (
+                modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
+            )
+            with open(
+                os.path.join("response_folder", "velociraptor_clients.json"), "w"
+            ) as f:
+                json.dump(velociraptor_client_dict, f)
             logger.info("Loading clients dictionary!")
             clients_dict = modules.Velociraptor.VelociraptorScript.get_clients(
                 logger, False
