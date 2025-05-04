@@ -818,6 +818,18 @@ async def malware_func(
                         usn_results = await async_run_generic_vql(usn_query, logger)
                         if len(usn_results) < 1:
                             logger.info("No csv/txt detected!")
+                            response_element.update(
+                                        {
+                                            "AlertID": id_generator(),
+                                            "Client FQDN": fqdn,
+                                            "UserInput": {
+                                                "UserId": "",
+                                                "Status": "New",
+                                                "ChangedAt": "",
+                                            },
+                                        }
+                                     )
+                            filteredResponse.append(response_element)
                             return
                         logger.info(f"USN query returned {len(usn_results)} files.")
                         logger.info(f"USN values:" + str(usn_results))
@@ -995,6 +1007,18 @@ async def malware_func(
                                                 """
                                                 tempObjTime.update(timestamp_diffs)
                                                 filteredResponse.append(tempObjTime)
+                                            else:
+                                                response_element.update({
+                                                                        "AlertID": id_generator(),
+                                                                        "Client FQDN": fqdn,
+                                                                        "UserInput": {
+                                                                            "UserId": "",
+                                                                            "Status": "New",
+                                                                            "ChangedAt": "",
+                                                                        },
+                                                                    }
+                                                                )
+                                                filteredResponse.append(response_element)
                                         except Exception as e:
                                             logger.error(
                                                 f"Error checking timestamps for file entry: {str(e)}"
@@ -1006,7 +1030,7 @@ async def malware_func(
 
                         # Remove the pf file if wanted
                         # temp bool for the removal
-                        removePF = True
+                        removePF = False
                         if removePF:
                             delete_file_query = f"""  
     LET delete_cmd = 'cmd /c del "{response_element.get('OSPath')}"'
