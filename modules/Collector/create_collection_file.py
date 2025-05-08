@@ -108,9 +108,9 @@ def run_server_artifact(logger, config_data, config_agent):
         artifactsListArr = ["Generic.Client.Info"]
         artifactsParmObj = {}
         for obj in config_data["Artifacts"]:
-            artifactsParmObj[obj["name"]] = obj["parameters"]
+            if obj.get("parameters"):  # Non-empty dicts evaluate to True
+                artifactsParmObj[obj["name"]] = obj["parameters"]
             artifactsListArr.append(obj["name"])
-
         artifacts_dict["Server.Utils.CreateCollector"]["OS"] = "Generic"
         artifacts_dict["Server.Utils.CreateCollector"]["opt_collector_filename"] = (
             config_data["Configuration"]["CollectorFileName"]

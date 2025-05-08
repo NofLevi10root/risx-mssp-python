@@ -262,7 +262,7 @@ def format_arguments_Helper(arguments,logger):
             tmp += f"`{key}` = {value}"
         elif isinstance(value, list):
             logger.info("list type")
-            tmp += f"`{key}` = {value}"
+            tmp += f"""`{key}` = '[{','.join(f'"{item}"' for item in value)}]' """
         elif isinstance(value, bool):
             logger.info("list type")
             tmp += f"`{key}` = {'true' if value else 'false' }"
