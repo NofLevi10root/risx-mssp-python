@@ -4,6 +4,13 @@ import logging
 import os
 import traceback
 
+import json
+import os
+from datetime import datetime
+from typing import Any, Dict, List, Union
+
+
+
 def connect_to_elasticsearch(host='localhost', port=9200, logger=None):
     try:
         es = Elasticsearch([{'host': host, 'port': port, 'scheme': 'http'}])
@@ -135,10 +142,9 @@ def upload_data_to_elasticsearch(es, index_name, data_table, logger=None):
     
     return successful_docs, failed_docs, error_details
 
-def enter_data(file_path, index_name, elastic_ip, logger):
+def enter_data(input_source, index_name, elastic_ip, logger):
     try:
-        logger.info("First argument is input path, second argument is index name")
-        logger.info(f"file_path: {file_path}")
+        logger.info(f"First argument is input source (file path or Python object), second argument is index name")
         logger.info(f"index_name: {index_name}")
         es_port = 9200
 
@@ -148,8 +154,24 @@ def enter_data(file_path, index_name, elastic_ip, logger):
         # Create the index (if it doesn't exist)
         create_index(es, index_name, logger)
 
-        # Load data from the file
-        data_table = load_data(file_path, logger)
+        # Load data based on input type
+        if isinstance(input_source, str):
+            # Input is a file path
+            logger.info(f"Processing input as file path: {input_source}")
+            data_table = load_data(input_source, logger)
+        else:
+            # Input is a Python object
+            logger.info(f"Processing input as Python object")
+            
+            # Check if input_source is a single document and not a dictionary of documents
+            if isinstance(input_source, dict):
+                # Convert single document to the expected format
+                # Generate a unique ID for this document (you might want to use a field from the document)
+                doc_id = input_source.get('AlertID', str(datetime.now().timestamp()))
+                data_table = {doc_id: input_source}
+            else:
+                # Input is already in the expected format
+                data_table = input_source
 
         # Upload the data table to Elasticsearch document by document
         successful, failed, errors = upload_data_to_elasticsearch(es, index_name, data_table, logger)
@@ -158,6 +180,8 @@ def enter_data(file_path, index_name, elastic_ip, logger):
             logger.warning(f"Completed with {failed} failed documents out of {successful + failed} total")
         else:
             logger.info(f"All {successful} documents successfully indexed")
+        
+        return successful, failed, errors
         
     except Exception as e:
         logger.error(f"Error in the data entry process: {e}")

@@ -301,29 +301,31 @@ def format_arguments_obj(arguments,logger):
     return formatted_arguments
 
 def get_clients(logger, onlineFlag):
-    channel = setup_connection(logger)
-    stub = api_pb2_grpc.APIStub(channel)
-    query = "SELECT * FROM clients()"
-    # Perform the query
-    logger.info("Sending get client request!")
-    org_id = "OCHL0"
-    json_data_string = server_query(channel, org_id, query, logger)
-    if json_data_string:
-        data = json.loads(json_data_string)
-        if not onlineFlag:
-                host_client_id_dict = {
-                    entry["os_info"]["hostname"]: entry["client_id"] for entry in data
-                }
-                return host_client_id_dict
+    try:
+        channel = setup_connection(logger)
+        stub = api_pb2_grpc.APIStub(channel)
+        query = "SELECT * FROM clients()"
+        # Perform the query
+        logger.info("Sending get client request!")
+        org_id = "OCHL0"
+        json_data_string = server_query(channel, org_id, query, logger)
+        if json_data_string:
+            data = json.loads(json_data_string)
+            if not onlineFlag:
+                    host_client_id_dict = {
+                        entry["os_info"]["hostname"]: entry["client_id"] for entry in data
+                    }
+                    return host_client_id_dict
+            else:
+                    host_client_id_dict = {
+                        entry["client_id"]: [entry["last_seen_at"], entry["os_info"]["fqdn"]] for entry in data
+                    }
+                    return host_client_id_dict
         else:
-                host_client_id_dict = {
-                    entry["client_id"]: [entry["last_seen_at"], entry["os_info"]["fqdn"]] for entry in data
-                }
-                return host_client_id_dict
-    else:
-        logger.error("Failed to get clients.")
-        return {}
-
+            logger.error("Failed to get clients.")
+            return {}
+    except Exception as e:
+        logger.error("Velo get_client failed:" + str(e))
 
 def get_hunt_state(stub, client_id, flow_id):
     query = f"LET collection <= get_flow(client_id='{client_id}', flow_id='{flow_id}') SELECT * FROM collection"
@@ -663,11 +665,11 @@ def server_query(channel, org_id, query, logger):
                     all_rows.extend(
                         rows
                     )  # Append the rows from this response to the list
-    except grpc.RpcError as e:
+    except Exception as e:
         if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-            print("The call timed out.")
+            logger.error("The call timed out.")
         else:
-            print(f"An RPC error occurred: {e}")
+            logger.error(f"An RPC error occurred: {e}")
 
     # Convert list of rows to a DataFrame
     if all_rows:
@@ -743,40 +745,43 @@ def get_macro_data(channel, org_id, logger, file_path):
 
 
 def setup_connection(logger):
-    logger.info("Setup connection!")
-    # Load the YAML configuration
-    config_path = os.path.join(
-        "modules", "Velociraptor", "dependencies", "api.config.yaml"
-    )
-    config = ""
     try:
-        with open(config_path, "r") as f:
-            logger.info("Reading config yaml!")
-            config = yaml.safe_load(f)
+        logger.info("Setup connection!")
+        # Load the YAML configuration
+        config_path = os.path.join(
+            "modules", "Velociraptor", "dependencies", "api.config.yaml"
+        )
+        config = ""
+        try:
+            with open(config_path, "r") as f:
+                logger.info("Reading config yaml!")
+                config = yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {str(e)}")
+            return
+
+        # Prepare the credentials for the gRPC connection
+        creds = grpc.ssl_channel_credentials(
+            root_certificates=config["ca_certificate"].encode("utf8"),
+            private_key=config["client_private_key"].encode("utf8"),
+            certificate_chain=config["client_cert"].encode("utf8"),
+        )
+        options = (
+            (
+                "grpc.ssl_target_name_override",
+                "VelociraptorServer",
+            ),
+        )
+
+        # Establish the secure channel
+        try:
+            channel = grpc.secure_channel(config["api_connection_string"], creds, options)
+            logger.info("Secure channel established")
+            return channel
+            # Perform operations with the channel here
+            # For example, making RPC calls
+
+        except grpc.RpcError as e:
+            logger.error(f"An RPC error occurred: {e.code()} - {e.details()}")
     except Exception as e:
-        logger.error(f"Failed to load configuration: {str(e)}")
-        return
-
-    # Prepare the credentials for the gRPC connection
-    creds = grpc.ssl_channel_credentials(
-        root_certificates=config["ca_certificate"].encode("utf8"),
-        private_key=config["client_private_key"].encode("utf8"),
-        certificate_chain=config["client_cert"].encode("utf8"),
-    )
-    options = (
-        (
-            "grpc.ssl_target_name_override",
-            "VelociraptorServer",
-        ),
-    )
-
-    # Establish the secure channel
-    try:
-        channel = grpc.secure_channel(config["api_connection_string"], creds, options)
-        logger.info("Secure channel established")
-        return channel
-        # Perform operations with the channel here
-        # For example, making RPC calls
-
-    except grpc.RpcError as e:
-        logger.error(f"An RPC error occurred: {e.code()} - {e.details()}")
+        logger.info("Velo API connection failed:" + str(e))

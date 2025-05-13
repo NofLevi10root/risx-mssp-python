@@ -8,7 +8,7 @@ import signal
 
 import traceback
 import additionals.logger
-
+import additionals.elastic_api
 signal_dict = {
     signal.SIGHUP: "Hangup detected on controlling terminal or death of controlling process. Used to report that the user's terminal is disconnected and usually to terminate the program.",
     signal.SIGINT: "Interrupt from keyboard (usually Ctrl+C). Allows for graceful termination of the process.",
@@ -1070,9 +1070,12 @@ async def malware_func(
     return response_element  # Return the potentially updated response_element
 
 
-async def run_velociraptor_alerts(time_interval):
+async def run_velociraptor_alerts(time_interval, elasticIP):
     logger = additionals.funcs.setup_logger("alerts_interval.log")
-    logger.info("Entered alerts function!")
+    path = "response_folder/alerts.json"
+    if not os.path.exists(path):
+        with open(path, "w") as f: json.dump({}, f); logger.info("Created empty alerts.json")
+        logger.info("Entered alerts function!")
     while True:
         try:
             logger.info("Start alerts loop!")
@@ -1223,7 +1226,12 @@ async def run_velociraptor_alerts(time_interval):
                         if response_element:
                             filteredResponse.append(response_element)
                 logger.info("Adding response!")
+                
                 collection_data.append(filteredResponse)
+                logger.info("Adding alerts to elastic!")
+                for elastic_response in filteredResponse:           
+                    additionals.elastic_api.enter_data(elastic_response, "mssp_alerts",elasticIP, logger)
+
             logger.info("Alerts succeeded. Saving alerts.json file!")
             await sort_alerts(previous_collection, collection_data, logger)
             connection.close()
@@ -1253,7 +1261,7 @@ async def main():
             .get("IntervalTimes", {})
         )
         logger.info(f"time_to_sleep_for_all_modules {str(time_to_sleep_for_all_modules)}")
-
+        elasticIP = config_data['ClientData']['API']['Elastic']["Ip"]
         # Convert each time value from minutes to seconds
         if time_to_sleep_for_all_modules == {}:
             logger.error("Fatal error no interval times found!")
@@ -1272,7 +1280,7 @@ async def main():
 
             await asyncio.gather(
                 run_velociraptor_alerts(
-                    time_to_sleep_for_all_modules["GetAlertsDataInMinutes"]
+                    time_to_sleep_for_all_modules["GetAlertsDataInMinutes"],elasticIP
                 ),
                 run_velociraptor_result_collection(
                     time_to_sleep_for_all_modules["GetResultsDataInMinutes"], logger
