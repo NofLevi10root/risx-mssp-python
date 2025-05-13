@@ -53,52 +53,42 @@ def execute_query(connection, query, logger):
     finally:
         cursor.close()
 
-def execute_update_config(connection, previous_config_date, config):
+def execute_update_config(connection, previous_config_date, request_status_data):
     """
-    Update the config column in the configjson table with the given config dictionary.
+    Update only the RequestStatus field in the config JSON using JSON_SET.
     
     Parameters:
     - connection: A MySQLConnection object.
-    - config (dict): The new configuration dictionary to update in the database.
+    - previous_config_date: Date string for updating the lastupdated field.
+    - request_status_data (list): The RequestStatus array to update in the config.
     
     Returns:
     - bool: True if the update was successful, False otherwise.
     """
     cursor = connection.cursor()
     try:
-        # Convert the dictionary to a JSON string
-       
-        config_json = json.dumps(config)
-
-        # The query to update the first row
+        # Update only the RequestStatus field using JSON_SET
+        request_status_json = json.dumps(request_status_data)
         query = """
         UPDATE configjson
-        SET config = %s
+        SET config = JSON_SET(config, '$.RequestStatus', CAST(%s AS JSON))
         LIMIT 1;
         """
+        cursor.execute(query, (request_status_json,))
         
-        # Execute the query with the JSON string as the parameter
-        cursor.execute(query, (config_json,))
-
-        connection.commit()
-
-    
-        # Convert the date string to a datetime object
+        # Update timestamp
         date_format = "%d-%m-%Y-%H-%M-%S"
         date_object = datetime.strptime(previous_config_date, date_format)
-        
-        # Format the datetime object to a MySQL-compatible string
         mysql_date_string = date_object.strftime('%Y-%m-%d %H:%M:%S')
-        query = """
+        
+        timestamp_query = """
         UPDATE configjson
         SET lastupdated = %s
         LIMIT 1;
         """
+        cursor.execute(timestamp_query, (mysql_date_string,))
         
-        # Execute the query with the JSON string as the parameter
-        cursor.execute(query, (mysql_date_string,))
         connection.commit()
-        
         return True
     except Error as e:
         print(f"Error: {e}")

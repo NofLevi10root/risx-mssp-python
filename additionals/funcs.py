@@ -77,37 +77,70 @@ def update_json(connection, new_config_data, previous_config_date, interval_flag
     max_retries = 20
     wait_time = 1
     retries = 0
+    
     while retries < max_retries:
         try:
+            # Get current config data just to extract and merge RequestStatus
             config_data = json.loads(additionals.mysql_functions.execute_query(connection, "SELECT config FROM configjson LIMIT 1", logger)[0][0])
             logger.info("After getting config_data!")
+            
+            # Extract and prepare data
             existing_data = config_data.get("RequestStatus", [])
             existing_data_dict = {entry['ResponsePath']: entry for entry in existing_data}
             new_data = new_config_data.get("RequestStatus", [])
-            # Merge new data with the existing data
+            
+            # Merge new data with existing data
             for new_entry in new_data:
                 response_path = new_entry['ResponsePath']
                 existing_data_dict[response_path] = new_entry
-
-            # Convert the dictionary back to a list
+            
+            # Convert dictionary back to list
             merged_data = list(existing_data_dict.values())
-            success = ""
-            if  interval_flag:
-                config_data['RequestStatus'] = merged_data
-                # Save the merged data back to the JSON file
-                logger.info("Executing update config query")
-                success = additionals.mysql_functions.execute_update_config(connection, previous_config_date, config_data)
-            else:
-                new_config_data['RequestStatus'] = merged_data
-                # Save the merged data back to the JSON file
-                logger.info("Executing update config query")
-                success = additionals.mysql_functions.execute_update_config(connection, previous_config_date, new_config_data)
-            if success:
+            
+            # Determine which RequestStatus to use based on interval_flag
+            final_request_status = merged_data if interval_flag else new_config_data.get("RequestStatus", [])
+            
+            # Use JSON_SET to update only the RequestStatus field
+            logger.info("Executing update config query")
+            cursor = connection.cursor()
+            
+            try:
+                # Update only the RequestStatus field using JSON_SET
+                request_status_json = json.dumps(final_request_status)
+                query = """
+                UPDATE configjson
+                SET config = JSON_SET(config, '$.RequestStatus', CAST(%s AS JSON))
+                LIMIT 1;
+                """
+                cursor.execute(query, (request_status_json,))
+                
+                # Update timestamp
+                date_format = "%d-%m-%Y-%H-%M-%S"
+                date_object = datetime.strptime(previous_config_date, date_format)
+                mysql_date_string = date_object.strftime('%Y-%m-%d %H:%M:%S')
+                
+                timestamp_query = """
+                UPDATE configjson
+                SET lastupdated = %s
+                LIMIT 1;
+                """
+                cursor.execute(timestamp_query, (mysql_date_string,))
+                
+                connection.commit()
                 print("Config updated successfully.")
+                success = True
+            except Error as e:
+                print(f"Error: {e}")
+                success = False
+            finally:
+                cursor.close()
+            
+            if success:
+                return merged_data
             else:
                 print("Failed to update config.")
-            return merged_data
-    
+                return None
+        
         except (IOError, OSError) as e:
             logger.warning(f"File is in use, retrying... ({retries + 1}/{max_retries})")
             time.sleep(wait_time)
@@ -115,6 +148,7 @@ def update_json(connection, new_config_data, previous_config_date, interval_flag
     
     logger.error(f"Failed to update the file after {max_retries} attempts.")
     return new_data
+
 
 def write_json(result, filename):
     try:
