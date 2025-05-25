@@ -327,9 +327,12 @@ def start_timesketch(row, general_config, logger):
                         row, command2 = get_command2(general_config, api, row, host_name, user_name, client_name, logger)
                         logger.info("Removing previous artifacts.plaso")
                         # Return after loading file
-                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
-                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
-                        additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
+                        # additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data alpine sh -c 'rm -f /data/{client_name}Artifacts.plaso'", "", logger)
+                        # additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketchrc'", "", logger)
+                        # additionals.funcs.run_subprocess(f"sudo docker run --rm -v /home/tenroot/setup_platform/workdir/risx-mssp/backend/plaso/:/data/ alpine sh -c 'rm -f /data/.timesketch.token'", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo rm -f /home/node/.timesketch.token", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo rm -f /home/node/.timesketchrc", "", logger)
+                        additionals.funcs.run_subprocess(f"sudo rm -f /data/{client_name}Artifacts.plaso", "", logger)
                         logger.info("Running plaso!")
                         # Return after loading file
                         additionals.funcs.run_subprocess(command1,"Processing completed", logger)
