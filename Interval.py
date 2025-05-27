@@ -9,6 +9,7 @@ import signal
 import traceback
 import additionals.logger
 import additionals.elastic_api
+
 signal_dict = {
     signal.SIGHUP: "Hangup detected on controlling terminal or death of controlling process. Used to report that the user's terminal is disconnected and usually to terminate the program.",
     signal.SIGINT: "Interrupt from keyboard (usually Ctrl+C). Allows for graceful termination of the process.",
@@ -225,6 +226,20 @@ import psutil
 from datetime import datetime, timedelta
 import asyncio
 import string
+
+
+def timestamp_to_Elastic(timestamp):
+    if timestamp > 4102444800:
+        timestamp_seconds = timestamp / 1000
+        microseconds = int(timestamp % 1000) * 1000
+    else:
+        timestamp_seconds = timestamp
+        microseconds = 0
+
+    dt = datetime.fromtimestamp(timestamp_seconds)
+    dt = dt.replace(microsecond=microseconds)
+
+    return dt.isoformat() + "Z"  # Add Z for UTC
 
 
 def id_generator(size=15, chars=string.ascii_letters + string.digits):
@@ -819,16 +834,16 @@ async def malware_func(
                         if len(usn_results) < 1:
                             logger.info("No csv/txt detected!")
                             response_element.update(
-                                        {
-                                            "AlertID": id_generator(),
-                                            "Client FQDN": fqdn,
-                                            "UserInput": {
-                                                "UserId": "",
-                                                "Status": "New",
-                                                "ChangedAt": "",
-                                            },
-                                        }
-                                     )
+                                {
+                                    "AlertID": id_generator(),
+                                    "Client FQDN": fqdn,
+                                    "UserInput": {
+                                        "UserId": "",
+                                        "Status": "New",
+                                        "ChangedAt": "",
+                                    },
+                                }
+                            )
                             filteredResponse.append(response_element)
                             return
                         logger.info(f"USN query returned {len(usn_results)} files.")
@@ -957,7 +972,7 @@ async def malware_func(
 
                                                 process = response_element.get(
                                                     "Filename", "Unknown"
-                                                )#.split("-")[0]
+                                                )  # .split("-")[0]
                                                 tempObjTime = {
                                                     "AlertID": id_generator(),
                                                     "Artifact": "Python.Suspicious.File.Found",  # Not needed but fked up the UI
@@ -969,7 +984,9 @@ async def malware_func(
                                                     "Pf File Path": response_element.get(
                                                         "OSPath", "Unknown"
                                                     ),
-                                                    f"Pf {'Create' if 'FILE_CREATE' in response_element.get('OSPath', 'Unknown') else 'Modified'} Time":response_element.get("Timestamp", "Unknown"),
+                                                    f"Pf {'Create' if 'FILE_CREATE' in response_element.get('OSPath', 'Unknown') else 'Modified'} Time": response_element.get(
+                                                        "Timestamp", "Unknown"
+                                                    ),
                                                     "Suspicious File": suspicious_file_path,
                                                     "UserInput": {
                                                         "UserId": "",
@@ -1008,17 +1025,20 @@ async def malware_func(
                                                 tempObjTime.update(timestamp_diffs)
                                                 filteredResponse.append(tempObjTime)
                                             else:
-                                                response_element.update({
-                                                                        "AlertID": id_generator(),
-                                                                        "Client FQDN": fqdn,
-                                                                        "UserInput": {
-                                                                            "UserId": "",
-                                                                            "Status": "New",
-                                                                            "ChangedAt": "",
-                                                                        },
-                                                                    }
-                                                                )
-                                                filteredResponse.append(response_element)
+                                                response_element.update(
+                                                    {
+                                                        "AlertID": id_generator(),
+                                                        "Client FQDN": fqdn,
+                                                        "UserInput": {
+                                                            "UserId": "",
+                                                            "Status": "New",
+                                                            "ChangedAt": "",
+                                                        },
+                                                    }
+                                                )
+                                                filteredResponse.append(
+                                                    response_element
+                                                )
                                         except Exception as e:
                                             logger.error(
                                                 f"Error checking timestamps for file entry: {str(e)}"
@@ -1074,7 +1094,9 @@ async def run_velociraptor_alerts(time_interval, elasticIP):
     logger = additionals.funcs.setup_logger("alerts_interval.log")
     path = "response_folder/alerts.json"
     if not os.path.exists(path):
-        with open(path, "w") as f: json.dump({}, f); logger.info("Created empty alerts.json")
+        with open(path, "w") as f:
+            json.dump({}, f)
+            logger.info("Created empty alerts.json")
         logger.info("Entered alerts function!")
     while True:
         try:
@@ -1215,6 +1237,9 @@ async def run_velociraptor_alerts(time_interval, elasticIP):
                         response_element.update(
                             {
                                 "AlertID": id_generator(),
+                                "Detection Time": timestamp_to_Elastic(
+                                    response_element["_ts"]
+                                ),
                                 "Client FQDN": fqdn,
                                 "UserInput": {
                                     "UserId": "",
@@ -1226,11 +1251,13 @@ async def run_velociraptor_alerts(time_interval, elasticIP):
                         if response_element:
                             filteredResponse.append(response_element)
                 logger.info("Adding response!")
-                
+
                 collection_data.append(filteredResponse)
                 logger.info("Adding alerts to elastic!")
-                for elastic_response in filteredResponse:           
-                    additionals.elastic_api.enter_data(elastic_response, "mssp_alerts",elasticIP, logger)
+                for elastic_response in filteredResponse:
+                    additionals.elastic_api.enter_data(
+                        elastic_response, "mssp_alerts", elasticIP, logger
+                    )
 
             logger.info("Alerts succeeded. Saving alerts.json file!")
             await sort_alerts(previous_collection, collection_data, logger)
@@ -1260,8 +1287,10 @@ async def main():
             .get("IntervalConfigurations", {})
             .get("IntervalTimes", {})
         )
-        logger.info(f"time_to_sleep_for_all_modules {str(time_to_sleep_for_all_modules)}")
-        elasticIP = config_data['ClientData']['API']['Elastic']["Ip"]
+        logger.info(
+            f"time_to_sleep_for_all_modules {str(time_to_sleep_for_all_modules)}"
+        )
+        elasticIP = config_data["ClientData"]["API"]["Elastic"]["Ip"]
         # Convert each time value from minutes to seconds
         if time_to_sleep_for_all_modules == {}:
             logger.error("Fatal error no interval times found!")
@@ -1280,7 +1309,7 @@ async def main():
 
             await asyncio.gather(
                 run_velociraptor_alerts(
-                    time_to_sleep_for_all_modules["GetAlertsDataInMinutes"],elasticIP
+                    time_to_sleep_for_all_modules["GetAlertsDataInMinutes"], elasticIP
                 ),
                 run_velociraptor_result_collection(
                     time_to_sleep_for_all_modules["GetResultsDataInMinutes"], logger
