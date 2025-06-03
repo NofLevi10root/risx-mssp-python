@@ -6,6 +6,7 @@ from threading import Thread
 
 import helpers.ai_vulnerability_managment.main
 import modules.Velociraptor.AddToTimeSketch
+import modules.Prowler.prowler
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 print(f"Current working directory: {os.getcwd()}")
@@ -63,8 +64,12 @@ def main():
             logger.info("Inside AI Vulnerability Managment!")
             subprocess.run(["python", "helpers/ai_vulnerability_managment/main.py"], capture_output=True, text=True)
             logger.info(str(request))
+        
         if request["ModuleName"] == "Velociraptor":
             request = modules.Velociraptor.VelociraptorScript.run_artifact(request, logger)
+            additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
+        if request["ModuleName"] == "Prowler":
+            request = modules.Prowler.prowler.run_prowler(request, config_data, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "Shodan":
             request = modules.SmallModules.SmallModules.run_shodan(request, config_data["ClientData"]["API"]["Shodan"], request["Population"],elasticIp, logger)
@@ -81,6 +86,7 @@ def main():
         if request["ModuleName"] == "TimeSketch":
             request = modules.Velociraptor.AddToTimeSketch.start_timesketch(request, config_data, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
+
 
 
 

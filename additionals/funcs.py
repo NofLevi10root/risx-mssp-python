@@ -184,6 +184,8 @@ def add_row(ModuleName, SubModule, ArtifactTimeOutInMinutes, TimeInterval, Argum
         new_expire_date = StartDate + timedelta(minutes=minutes)
         if ModuleName == "TimeSketch" or ModuleName == "Kape":
             new_row["ArtifactTimeOutInMinutes"] = str(minutes * 60)
+        elif ModuleName == "Prowler":
+            new_row["ExpireDate"] = minutes
         else:
             new_row['ArtifactTimeOutInMinutes'] = new_expire_date.strftime(datetime_format)
 
@@ -451,6 +453,14 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
             config_data['RequestStatus'].append(row)
         else:
             logger.info("LeakCheck is not enable in config!")
+
+        if(config_data["Modules"]["Prowler"]["Enable"] == True):
+            leakcheck_data = config_data["Modules"]["Prowler"]
+            config_data["Modules"]["Prowler"]["LastRunDate"] = current_datetime
+            row = additionals.funcs.add_row("Prowler", "", str(config_data["Modules"]["Prowler"]["ExpireDate"]), "", "", previous_config_date , return_value_if_key_exists(assets_per_module, "Prowler"), logger)
+            config_data['RequestStatus'].append(row)
+        else:
+            logger.info("Prowler is not enable in config!")
 
         if(config_data["Modules"]["AIVulnerability"]["Enable"] == True):
             import random
