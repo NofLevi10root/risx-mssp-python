@@ -1095,7 +1095,7 @@ async def run_velociraptor_alerts(time_interval, elasticIP):
     path = "response_folder/alerts.json"
     if not os.path.exists(path):
         with open(path, "w") as f:
-            json.dump({}, f)
+            json.dump([], f)
             logger.info("Created empty alerts.json")
         logger.info("Entered alerts function!")
     while True:
