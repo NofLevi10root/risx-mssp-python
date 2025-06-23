@@ -409,51 +409,65 @@ async def log_processes():
 
 
 async def run_updates_daily(time_interval):
+    """
+    Runs scheduled tasks in a continuous loop. This version uses asyncio.gather
+    to run all artifact updates concurrently and correctly waits for them
+    to complete before proceeding.
+    """
     logger = additionals.funcs.setup_logger("daily_update_interval.log")
+    
     while True:
+        connection = None # Ensure connection is defined in the outer scope
+        time_to_sleep_hours = 24 # Default sleep time
+        sleep_seconds = int(time_to_sleep_hours) * 3600
         try:
+            logger.info("Starting daily update cycle...")
+            
             env_dict = additionals.funcs.read_env_file(logger)
             connection = await async_setup_mysql_connection(env_dict, logger)
+            config_data_raw = await async_execute_query(
+                connection, "SELECT config FROM configjson LIMIT 1", logger
+            )
+            config_data = json.loads(config_data_raw[0][0])
+            modules_updates_config = config_data.get("General", {}).get("IntervalConfigurations", {}).get("ModulesUpdates", {})
+            time_to_sleep_hours = modules_updates_config.get("TimeIntervalInHours", 24)
+            artifact_list = modules_updates_config.get("UpdateVelociraptorModules", [])
+        
+            if not artifact_list:
+                logger.info("No artifacts scheduled for update in this cycle.")
+            else:
+                logger.info(f"Starting {len(artifact_list)} artifact updates concurrently: {artifact_list}")
 
-            config_data = json.loads(
-                (
-                    await async_execute_query(
-                        connection, "SELECT config FROM configjson LIMIT 1", logger
-                    )
-                )[0][0]
-            )
-            time_to_sleep = (
-                config_data.get("General", {})
-                .get("IntervalConfigurations", {})
-                .get("ModulesUpdates", {})
-                .get("TimeIntervalInHours", 24)
-            )
-            artifact_list = (
-                config_data.get("General", {})
-                .get("IntervalConfigurations", {})
-                .get("ModulesUpdates", {})
-                .get("UpdateVelociraptorModules", [])
-            )
-            # logger.info("Creating client_id/hostname json dict!")
-            # velociraptor_client_dict = (
-            #     modules.Velociraptor.VelociraptorScript.get_clients(logger, False)
-            # )
-            # with open(
-            #     os.path.join("response_folder", "velociraptor_clients.json"), "w"
-            # ) as f:
-            #     json.dump(velociraptor_client_dict, f)
-            logger.info("Update modules:" + str(artifact_list))
-            logger.info("Running daily task!")
-            for artifact_name in artifact_list:
-                await async_run_server_artifact(artifact_name, logger)
-                await asyncio.sleep(2)
+                # --- THIS IS THE FIX ---
+                # 1. Prepare a list of all the tasks (coroutines) to run.
+                tasks = [
+                    async_run_server_artifact(artifact_name, logger)
+                    for artifact_name in artifact_list
+                ]
 
-            connection.close()
-            logger.info("Modules Update Time To Sleep:" + str(time_to_sleep) + " hours")
+                # 2. asyncio.gather runs all tasks concurrently.
+                # The 'await' here is crucial. It pauses this function
+                # until ALL the background tasks in the list have completed.
+                # This prevents the 'finally' block from running too early.
+                if tasks:
+                    await asyncio.gather(*tasks)
+                
+                logger.info("All artifact update tasks for this cycle have finished.")
+
         except Exception as e:
-            logger.error(f"Failed in daily task!\nError Message: {str(e)}")
+            logger.error(f"An error occurred in the daily update cycle: {str(e)}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
-        await asyncio.sleep(time_interval)
+            sleep_seconds = 360
+        
+        finally:
+            # This block will now correctly run only AFTER all tasks are done.
+            if connection:
+                connection.close()
+                logger.info("Database connection closed.")
+
+        logger.info(f"Update cycle finished. Sleeping for {time_to_sleep_hours} hours.")
+        
+        await asyncio.sleep(sleep_seconds)
 
 
 async def run_velociraptor_result_collection(time_interval, logger):

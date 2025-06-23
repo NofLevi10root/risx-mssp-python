@@ -463,16 +463,8 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
             logger.info("Prowler is not enable in config!")
 
         if(config_data["Modules"]["AIVulnerability"]["Enable"] == True):
-            import random
-            #ai_vuln_data = config_data["Modules"]["AIVulnerability"]
-            #config_data["Modules"]["AIVulnerability"]["LastRunDate"] = current_datetime
             products = config_data["Modules"]["AIVulnerability"]["Arguments"]["PRODUCTS"]
             row = additionals.funcs.add_row("AI Vulnerability Management", "", "", "", "", previous_config_date , products, logger)
-            
-            row["UniqueID"] = str(random.randint(9000000, 99999999))
-            row["ExpireDate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            row["Status"] = "Complete"
-            row["Error"] = ""
             config_data['RequestStatus'].append(row)
         #else:
         #   logger.info("AI vulnerability managment is not enable in config!")

@@ -61,10 +61,8 @@ def main():
     logger.info("New requests:" + str(new_requests))
     for request in new_requests:
         if(request["ModuleName"] == "AI Vulnerability Management"):
-            logger.info("Inside AI Vulnerability Managment!")
-            subprocess.run(["python", "helpers/ai_vulnerability_managment/main.py"], capture_output=True, text=True)
-            logger.info(str(request))
-        
+            request = helpers.ai_vulnerability_managment.main.run_cve_management(request, config_data, logger)
+            additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)
         if request["ModuleName"] == "Velociraptor":
             request = modules.Velociraptor.VelociraptorScript.run_artifact(request, logger)
             additionals.funcs.connect_db_update_config(env_dict, previous_config_date, config_data, logger)

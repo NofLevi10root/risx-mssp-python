@@ -181,13 +181,6 @@ def run_generic_vql_monitor(query, logger):
     except Exception as e:
         logger.error("THere is an Error in run_generic_vql Error : " + str(e))
 
-
-
-
-
-        
-
-
 def run_server_artifact(artifact_name, logger, parameters = ""):
     logger.info("Running server artifact query.")
     query = ""
@@ -409,7 +402,7 @@ def create_modules_macro_json(submodule_name, df, file_path, logger):
         with open(macro_output_filename, "w") as file:
             file.write(seralize_macro_df)
 
-
+"""
 def run_hunt(query, connection, stub, logger):
     try:
         logger.info("Query:" + query)
@@ -428,10 +421,96 @@ def run_hunt(query, connection, stub, logger):
             elif response.log:
                 # Query execution logs are sent in their own messages.
                 logger.info("Warning:" + response.log)
+        logger.info("Response")
         return hunt_id, "Hunting", ""
 
     except Exception as e:
         traceback_msg = traceback.format_exc()
+        return "", "Failed", traceback_msg
+"""
+import json
+import grpc
+import traceback
+from pyvelociraptor import api_pb2
+from pyvelociraptor import api_pb2_grpc
+
+def run_hunt(query, connection, stub, logger):
+    """
+    Creates a new hunt in Velociraptor and returns its ID.
+
+    This function is now more robust, with better logging, error handling,
+    and a timeout to prevent it from hanging indefinitely.
+
+    Args:
+        query (str): The VQL query to create the hunt.
+        connection: The gRPC channel object.
+        stub: The gRPC API stub.
+        logger: The logger object.
+
+    Returns:
+        tuple: (hunt_id, status, error_message)
+    """
+    try:
+        logger.info(f"Sending VQL to start hunt: {query}")
+        
+        request = api_pb2.VQLCollectorArgs(Query=[api_pb2.VQLRequest(VQL=query)])
+        
+        hunt_id = None
+        
+        # --- TIMEOUT INCREASED ---
+        # The timeout has been increased to 120 seconds (2 minutes) to give a slow
+        # or busy server more time to respond to the hunt creation request.
+        timeout_seconds = 120 
+        
+        # Iterate over the streaming response from the server
+        for response in stub.Query(request, timeout=timeout_seconds):
+            # Log any messages from the server's query execution
+            if response.log:
+                logger.info(f"Server Log: {response.log}")
+
+            # Process the main payload if it exists
+            if response.Response:
+                logger.debug(f"Received raw response payload: {response.Response}")
+                
+                try:
+                    # The response is a JSON string, sometimes wrapped in a list
+                    parsed_json = json.loads(response.Response)
+
+                    # Check if the response is a list with at least one item
+                    if isinstance(parsed_json, list) and len(parsed_json) > 0:
+                        # The first item in the list should be our result object
+                        result_obj = parsed_json[0]
+                        
+                        # Check if the object is a dictionary and has the HuntId
+                        if isinstance(result_obj, dict) and "HuntId" in result_obj:
+                            hunt_id = result_obj["HuntId"]
+                            logger.info(f"Successfully created Hunt. HuntId: {hunt_id}")
+                            # We found the ID, so we can stop processing responses
+                            break 
+                            
+                except (json.JSONDecodeError, KeyError, IndexError) as e:
+                    logger.warning(f"Could not parse HuntId from response. Payload: '{response.Response}'. Error: {e}")
+                    continue # Move to the next response message
+
+        # After checking all responses, determine the final status
+        if hunt_id:
+            return hunt_id, "Hunting", ""
+        else:
+            logger.error("Failed to create hunt. No HuntId was returned by the server within the timeout period.")
+            return "", "Failed", "No HuntId returned from server."
+
+    except grpc.RpcError as e:
+        # Handle specific gRPC errors like timeouts
+        if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+            logger.error(f"The gRPC call timed out after {timeout_seconds} seconds. The Velociraptor server is not responding or is too slow.")
+            return "", "Failed", "gRPC call timed out."
+        else:
+            logger.error(f"An RPC error occurred: {e.details()}")
+            return "", "Failed", f"gRPC Error: {e.details()}"
+
+    except Exception as e:
+        traceback_msg = traceback.format_exc()
+        logger.error(f"An unexpected error occurred in run_hunt: {traceback_msg}")
         return "", "Failed", traceback_msg
 
 
@@ -512,7 +591,7 @@ def run_artifact(row, logger):
             row["UniqueID"], row["Status"], row["Error"] = run_hunt(
                 query, channel, stub, logger
             )
-
+            loger.info("row:" + str(row))
         channel.close()
         return row
 
