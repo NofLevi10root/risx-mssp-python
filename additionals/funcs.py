@@ -454,6 +454,7 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
         else:
             logger.info("LeakCheck is not enable in config!")
 
+        """
         if(config_data["Modules"]["Prowler"]["Enable"] == True):
             leakcheck_data = config_data["Modules"]["Prowler"]
             config_data["Modules"]["Prowler"]["LastRunDate"] = current_datetime
@@ -461,7 +462,7 @@ def add_in_progress_rows(config_data, previous_config_date, logger):
             config_data['RequestStatus'].append(row)
         else:
             logger.info("Prowler is not enable in config!")
-
+        """
         if(config_data["Modules"]["AIVulnerability"]["Enable"] == True):
             products = config_data["Modules"]["AIVulnerability"]["Arguments"]["PRODUCTS"]
             row = additionals.funcs.add_row("AI Vulnerability Management", "", "", "", "", previous_config_date , products, logger)
