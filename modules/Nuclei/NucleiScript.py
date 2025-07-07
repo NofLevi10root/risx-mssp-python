@@ -8,53 +8,53 @@ import additionals.elastic_api
 import random
 
 def nuclei_elastic_format_fixer(response_path, population, logger):
+    """
+    Reads Nuclei data, enriches it, and returns it as a dictionary
+    formatted specifically for the project's Elasticsearch uploader.
+    """
     try:
-        logger.info("Starting nuclei_elastic_format_fixer...")
+        logger.info(f"Formatting data from: {response_path}")
 
-        # Step 1: Create a dictionary for quick look-up of asset strings and their parent IDs
+        # Create a lookup dictionary for asset information
         population_dict = {
             asset['asset_string']: asset.get('asset_parent_id')
             for asset in population if 'asset_string' in asset
         }
-        logger.info(f"Created population dictionary with {len(population_dict)} entries.")
-        logger.info(f"Population dictionary sample: {dict(list(population_dict.items())[:5])}")
 
-        # Step 2: Read the JSON content from the file
+        # Read the list of findings from the JSON file
         with open(response_path, 'r') as f:
-            data = json.load(f)
-        logger.info(f"Loaded {len(data)} objects from {response_path}")
+            findings_list = json.load(f)
+        logger.info(f"Loaded {len(findings_list)} findings.")
 
-        # Step 3: Process each object in the array
-        processed_count = 0
-        for obj in data:
-            hostname = obj.get("host")
-            #logger.info(f"Processing object: {json.dumps(obj, indent=2)}")
+        # This dictionary will hold the final data in the required format
+        processed_dict = {}
 
-            if hostname:
-                logger.info(f"Checking if hostname '{hostname}' exists in population_dict...")
-                if hostname in population_dict:
-                    obj["asset_string"] = hostname  # Assign matching asset_string
-                    obj["asset_parent_id"] = population_dict[hostname]  # Get parent ID
-                    processed_count += 1
-                    logger.info(f"Match found: Updated object with hostname '{hostname}'")
-                    #logger.info(f"Updated object: {json.dumps(obj, indent=2)}")
-                else:
-                    logger.warning(f"No match found for hostname: {hostname}")
+        # Convert the list into the required dictionary format
+        for i, finding in enumerate(findings_list):
+            # Add asset and timestamp info
+            hostname = finding.get("host")
+            if hostname and hostname in population_dict:
+                finding["asset_string"] = hostname
+                finding["asset_parent_id"] = population_dict[hostname]
+            finding["@timestamp"] = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
 
-            # Add timestamp in the required format
-            obj["@timestamp"] = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
+            # Create a unique ID from the finding's content to use as the key
+            template_id = finding.get("template-id", "unknown-template")
+            matched_at = finding.get("matched-at", f"item-{i}")
+            
+            # Sanitize the key to remove characters that are invalid in an ID
+            sanitized_matched_at = matched_at.replace('/', '_').replace(':', '_').replace('?', '_').replace('#', '_')
+            doc_id = f"{template_id}-{sanitized_matched_at}"
+            
+            # Add the finding to the dictionary with its unique key
+            processed_dict[doc_id] = finding
 
-        logger.info(f"Processed {processed_count} objects with matching asset strings.")
-
-        # Step 4: Save the updated data back to the JSON file
-        with open(response_path, 'w') as f:
-            json.dump(data, f, indent=4)
-        logger.info(f"Successfully saved updated data to {response_path}")
-
-        return data
+        logger.info(f"Successfully converted {len(processed_dict)} findings to the required dictionary format.")
+        return processed_dict
 
     except Exception as e:
-        logger.error(f"Error in nuclei_elastic_format_fixer: {str(e)}")
+        logger.error(f"An error occurred in nuclei_elastic_format_fixer: {e}")
+        logger.error(traceback.format_exc())
         return None
 
     
@@ -145,7 +145,7 @@ def start_nuclei(row,elasticIp, logger):
         command = [nuclei_path, "-list", nuclei_list_path, "-json-export", new_filename, "-timeout", str(nuclei_timeout), "-mhe", str(1), "-severity", ",".join(nuclei_include_severity)]
         #Without updates
         #l command = [nuclei_path, "-list", nuclei_list_path, "-disable-update-check", "-json-export", new_filename, "-timeout", str(nuclei_timeout), "-mhe", str(1), "-severity", ",".join(nuclei_include_severity)]
-        
+        """
         if nuclei_templates:
             command.extend(["-templates", nuclei_templates])
 
@@ -170,12 +170,12 @@ def start_nuclei(row,elasticIp, logger):
         if process.returncode != 0:
             logger.error(f"Nuclei command exited with error code: {process.returncode}")
         logger.info("Uploading nuclei to elastic!")
-
+        """
         try:
-            nuclei_elastic_format_fixer(row["ResponsePath"], row["Population"], logger)
-            #nuclei_elastic_format_fixer("response_folder/response_Nuclei_13-10-2024-10-54-59.json", row["Population"], logger)
+            #nuclei_elastic_format_fixer(row["ResponsePath"], row["Population"], logger)
+            nuclei_elastic_format_fixer("response_folder/response_Nuclei_07-07-2025-12-13-34.json", row["Population"], logger)
             logger.info("Uploading nuclei to elastic!")
-            additionals.elastic_api.enter_data(row["ResponsePath"], "artifact_nuclei",elasticIp, logger)
+            additionals.elastic_api.enter_data("response_folder/response_Nuclei_07-07-2025-12-13-34.json", "artifact_nuclei",elasticIp, logger)
             logger.info("End uploading!")
         except Exception as e:
             logger.warning("Elastic error:" + str(e))

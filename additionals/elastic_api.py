@@ -77,75 +77,88 @@ def clean_document(doc):
     return cleaned
 
 def upload_data_to_elasticsearch(es, index_name, data_table, logger=None):
-    """Upload data to Elasticsearch document by document"""
+    """
+    Upload data to Elasticsearch.
+    This version supports both dictionary and list inputs without using hashlib.
+    """
     successful_docs = 0
     failed_docs = 0
     error_details = []
-    
-    # Process each document individually
-    if isinstance(data_table, dict):
-        total_docs = len(data_table)
+
+    # Case 1: The input is a LIST of documents (e.g., from Nuclei)
+    if isinstance(data_table, list):
         if logger:
-            logger.info(f"Processing {total_docs} documents...")
-        
-        for doc_id, doc_data in data_table.items():
+            logger.info(f"Processing a list of {len(data_table)} documents...")
+
+        # Loop through the list using an index 'i' for a counter
+        for i, doc_data in enumerate(data_table):
             try:
-                # Clean the document to ensure it's valid for Elasticsearch
+                # Generate a simple, unique ID using the timestamp and a counter
+                doc_id = f"{datetime.now().timestamp()}-{i}"
+                
                 cleaned_doc = clean_document(doc_data)
                 
-                # Index the document
                 result = es.index(
                     index=index_name,
                     id=doc_id,
                     document=cleaned_doc
                 )
-                
+
                 if result.get('result') in ['created', 'updated']:
                     successful_docs += 1
-                    if logger:
-                        logger.info(f"Successfully indexed document {doc_id}")
                 else:
                     failed_docs += 1
-                    error_msg = f"Document {doc_id} indexing result: {result}"
+                    error_msg = f"Document with generated ID {doc_id} failed: {result}"
                     error_details.append(error_msg)
-                    if logger:
-                        logger.warning(error_msg)
-                
+            
             except Exception as e:
                 failed_docs += 1
-                error_msg = f"Error indexing document {doc_id}: {str(e)}"
+                error_msg = f"Error indexing document from list: {e}"
                 error_details.append(error_msg)
-                if logger:
-                    logger.error(error_msg)
-                    logger.error(traceback.format_exc())
-    else:
+
+    # Case 2: The input is a DICTIONARY of documents (for other calls)
+    elif isinstance(data_table, dict):
         if logger:
-            logger.error("Data is not in the expected dictionary format")
-        raise ValueError("Data must be a dictionary for document-by-document upload")
+            logger.info(f"Processing a dictionary of {len(data_table)} documents...")
+        
+        # This part is your original code, it remains unchanged
+        for doc_id, doc_data in data_table.items():
+            try:
+                cleaned_doc = clean_document(doc_data)
+                result = es.index(
+                    index=index_name,
+                    id=doc_id,
+                    document=cleaned_doc
+                )
+                if result.get('result') in ['created', 'updated']:
+                    successful_docs += 1
+                else:
+                    failed_docs += 1
+                    error_details.append(f"Document {doc_id} failed: {result}")
+            
+            except Exception as e:
+                failed_docs += 1
+                error_details.append(f"Error indexing document {doc_id}: {e}")
+
+    # Case 3: The input is an unsupported type
+    else:
+        error_msg = f"Unsupported data type: {type(data_table)}. Must be a list or dict."
+        if logger:
+            logger.error(error_msg)
+        raise ValueError(error_msg)
     
     # Report summary
     if logger:
         logger.info(f"Indexing complete: {successful_docs} successful, {failed_docs} failed")
-        if failed_docs > 0:
-            logger.error("Errors encountered during indexing:")
-            for error in error_details:
-                logger.error(f"  - {error}")
-    
-    # Verify results
-    try:
-        count = es.count(index=index_name)
-        if logger:
-            logger.info(f"Total documents in index: {count['count']}")
-    except Exception as e:
-        if logger:
-            logger.error(f"Error counting documents: {str(e)}")
-    
+
     return successful_docs, failed_docs, error_details
 
 def enter_data(input_source, index_name, elastic_ip, logger):
     try:
         logger.info(f"First argument is input source (file path or Python object), second argument is index name")
         logger.info(f"index_name: {index_name}")
+        logger.info("data:" + str(input_source))
+        logger.info("data type::" + str(type(input_source)))
         es_port = 9200
 
         # Connect to Elasticsearch
