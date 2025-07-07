@@ -145,7 +145,7 @@ def start_nuclei(row,elasticIp, logger):
         command = [nuclei_path, "-list", nuclei_list_path, "-json-export", new_filename, "-timeout", str(nuclei_timeout), "-mhe", str(1), "-severity", ",".join(nuclei_include_severity)]
         #Without updates
         #l command = [nuclei_path, "-list", nuclei_list_path, "-disable-update-check", "-json-export", new_filename, "-timeout", str(nuclei_timeout), "-mhe", str(1), "-severity", ",".join(nuclei_include_severity)]
-        """
+
         if nuclei_templates:
             command.extend(["-templates", nuclei_templates])
 
@@ -170,12 +170,12 @@ def start_nuclei(row,elasticIp, logger):
         if process.returncode != 0:
             logger.error(f"Nuclei command exited with error code: {process.returncode}")
         logger.info("Uploading nuclei to elastic!")
-        """
+
         try:
             #nuclei_elastic_format_fixer(row["ResponsePath"], row["Population"], logger)
-            nuclei_elastic_format_fixer("response_folder/response_Nuclei_07-07-2025-12-13-34.json", row["Population"], logger)
+            nuclei_elastic_format_fixer(row["ResponsePath"], row["Population"], logger)
             logger.info("Uploading nuclei to elastic!")
-            additionals.elastic_api.enter_data("response_folder/response_Nuclei_07-07-2025-12-13-34.json", "artifact_nuclei",elasticIp, logger)
+            additionals.elastic_api.enter_data(row["ResponsePath"], "artifact_nuclei",elasticIp, logger)
             logger.info("End uploading!")
         except Exception as e:
             logger.warning("Elastic error:" + str(e))
